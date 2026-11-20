@@ -226,6 +226,13 @@ try {
     Number(await viewer.evaluate(`document.querySelector("video").currentTime`)) > Number(still),
   )
 
+  // Back to the first camera: Chrome's other test cameras deliver frames in
+  // unusual formats, and the checks that follow are not about that.
+  await phone.evaluate(`document.querySelector("#chips .chip").click()`)
+  await phone.evaluate(`document.querySelector("#editor .seg button").click()`)
+  await delay(2500)
+  check("the phone goes back to the first camera", Boolean(await until(() => viewer.evaluate(picture))))
+
   // Chrome's test camera has a shutter: moving it makes exposure manual, and
   // the exposure setting has to say so when it is opened afterwards.
   const manual = `(() => {
