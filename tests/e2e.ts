@@ -85,7 +85,8 @@ async function startChrome(chrome: string): Promise<(url: string) => Promise<Pag
       "--remote-debugging-port=0",
       `--user-data-dir=${profile}`,
       "--no-first-run",
-      "--use-fake-device-for-media-stream",
+      // Three cameras, as a phone has.
+      "--use-fake-device-for-media-stream=device-count=3",
       "--use-fake-ui-for-media-stream",
       "--ignore-certificate-errors",
       "--autoplay-policy=no-user-gesture-required",
@@ -132,6 +133,7 @@ async function startChrome(chrome: string): Promise<(url: string) => Promise<Pag
   }
 }
 
+const resolution = `[...document.querySelectorAll("#chips .chip")].find((chip) => chip.textContent.startsWith("Resolution"))`
 const picture = `(() => { const v = document.querySelector("video"); return v.videoWidth > 0 && v.currentTime > 0 ? v.videoWidth + "x" + v.videoHeight : "" })()`
 
 try {
@@ -181,24 +183,68 @@ try {
     phone.evaluate(`/\\d+×\\d+ · \\d+ fps/.test(document.getElementById("status").textContent)`),
   )
   check("the phone says what it is sending", Boolean(figures))
-  await phone.evaluate(`document.querySelector("#chips .chip").click()`)
+  await phone.evaluate(`${resolution}.click()`)
   await phone.evaluate(
     `[...document.querySelectorAll("#editor .seg button")].find((b) => b.textContent === "720p").click()`,
   )
   check(
     "the strip shows the new value",
-    await phone.evaluate(`document.querySelector("#chips .chip b").textContent === "720p"`),
+    await phone.evaluate(`${resolution}.querySelector("b").textContent === "720p"`),
   )
   // The camera takes a moment to switch, and the viewer a moment more to see it.
   const height = `document.querySelector("video").srcObject.getVideoTracks()[0].getSettings().height`
   check("choosing 720p changes what the camera gives", await until(() => phone.evaluate(`${height} === 720`)))
   const longest = `(() => { const v = document.querySelector("video"); return v.videoWidth > 0 && Math.max(v.videoWidth, v.videoHeight) <= 1280 })()`
   check("the viewer gets the smaller picture", await until(() => viewer.evaluate(longest)))
-  await phone.evaluate(`document.querySelector("#chips .chip").click()`)
+  await phone.evaluate(`${resolution}.click()`)
   check(
     "touching the setting again puts its control away",
     await phone.evaluate(`!document.body.classList.contains("editing")`),
   )
+
+  // A phone has several cameras; the strip's first setting picks one by name.
+  const cameras = `(async () => {
+    const chip = document.querySelector("#chips .chip")
+    if (!chip.textContent.startsWith("Camera")) return "no camera setting: " + chip.textContent
+    const track = () => document.querySelector("video").srcObject.getVideoTracks()[0]
+    const before = track().getSettings().deviceId
+    chip.click()
+    const buttons = [...document.querySelectorAll("#editor .seg button")]
+    buttons.find((button) => !button.classList.contains("on")).click()
+    await new Promise((done) => setTimeout(done, 2500))
+    const after = track().getSettings().deviceId
+    return buttons.length + " cameras, " + (after !== before && track().readyState === "live" ? "switched" : "did not switch")
+  })()`
+  check(
+    "the phone lists its cameras and switches to the one chosen",
+    (await phone.evaluate(cameras)) === "3 cameras, switched",
+  )
+  const still = await viewer.evaluate(`document.querySelector("video").currentTime`)
+  await delay(1000)
+  check(
+    "the picture goes on from the other camera",
+    Number(await viewer.evaluate(`document.querySelector("video").currentTime`)) > Number(still),
+  )
+
+  // Chrome's test camera has a shutter: moving it makes exposure manual, and
+  // the exposure setting has to say so when it is opened afterwards.
+  const manual = `(() => {
+    const chips = [...document.querySelectorAll("#chips .chip")]
+    const named = (word) => chips.find((chip) => chip.textContent.startsWith(word))
+    const exposure = named("Exposure")
+    if (!exposure || !named("Shutter")) return "no shutter here"
+    exposure.click()
+    document.querySelector("#editor .seg button").click()
+    named("Shutter").click()
+    const slider = document.querySelector("#editor input")
+    slider.value = slider.min
+    slider.dispatchEvent(new Event("input"))
+    exposure.click()
+    return document.querySelector("#editor .seg button.on").textContent + " / " + exposure.querySelector("b").textContent
+  })()`
+  const exposure = String(await phone.evaluate(manual))
+  check("moving the shutter makes exposure manual", ["Manual / Manual", "no shutter here"].includes(exposure), exposure)
+  await phone.evaluate(`document.querySelector("#chips .chip.on")?.click()`)
 
   // Nothing in the strip is ever left half outside the screen.
   const inside = `(() => {

@@ -1,6 +1,6 @@
 // The page the phone opens from the QR code: it sends the camera to every
 // viewer (the OBS source and the preview in the app window).
-import { cameraParams, type Param, sending, type Wanted } from "./controls.ts"
+import { cameraParams, choice, type Param, sending, type Wanted } from "./controls.ts"
 import { $, type PhoneMessage, pick, type Signal } from "./types.ts"
 
 const t = pick({
@@ -14,6 +14,9 @@ const t = pick({
     replaced: "Another phone took over as the camera.",
     retry: "Try again",
     again: "Use this phone",
+    camera: "Camera",
+    front: "Front",
+    back: "Back",
     controls: {
       resolution: "Resolution",
       fps: "Frames",
@@ -47,6 +50,9 @@ const t = pick({
     replaced: "Otro celular pasó a ser la cámara.",
     retry: "Reintentar",
     again: "Usar este celular",
+    camera: "Cámara",
+    front: "Frontal",
+    back: "Trasera",
     controls: {
       resolution: "Resolución",
       fps: "Cuadros",
@@ -122,11 +128,73 @@ const send = (to: number, data: Signal) =>
     body: JSON.stringify({ to, data }),
   }).catch(() => {})
 
+// A phone has several cameras (front, back, wide, tele). The round button
+// turns it around; the strip's first setting picks one of them by name.
+let cameras: MediaDeviceInfo[] = []
+let chosen: string | null = null
+
 function camera(): Promise<MediaStream> {
-  return navigator.mediaDevices.getUserMedia({
-    audio: false,
-    video: { facingMode: { ideal: facing }, ...shape() },
-  })
+  const which = chosen ? { deviceId: { exact: chosen } } : { facingMode: { ideal: facing } }
+  return navigator.mediaDevices.getUserMedia({ audio: false, video: { ...which, ...shape() } })
+}
+
+/** The cameras this phone lets the page use. Their names only come once the
+    camera has been allowed, so this is asked after the first picture. */
+async function findCameras() {
+  const devices = await navigator.mediaDevices.enumerateDevices().catch(() => [])
+  cameras = devices.filter((device) => device.kind === "videoinput" && device.deviceId)
+}
+
+/** A camera's name as the phone gives it, without the word every one has. */
+const named = (device: MediaDeviceInfo, index: number) =>
+  device.label
+    .replace(/\b(camera|cámara|de)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim() || `${t.camera} ${index + 1}`
+
+/** One word for the strip: "Back Ultra Wide" is too long to show whole there. */
+function brief(name: string): string {
+  if (/front|frontal|delantera|user/i.test(name)) return t.front
+  for (const lens of ["Ultra", "Tele", "Triple", "Dual"]) if (new RegExp(lens, "i").test(name)) return lens
+  if (/back|rear|trasera|environment/i.test(name)) return t.back
+  return name.slice(0, 8)
+}
+
+/** Opens the camera now asked for in place of the one in use. `undo` puts the
+    request back as it was if the phone refuses. */
+async function swap(undo: () => void) {
+  if (!stream) return
+  // Some phones cannot open a second camera while the first is in use.
+  for (const track of stream.getTracks()) track.stop()
+  try {
+    stream = await camera()
+  } catch {
+    undo()
+    stream = await camera().catch(() => null)
+    if (!stream) return notice(t.denied, t.retry)
+  }
+  video.srcObject = stream
+  controls()
+  const [track] = stream.getVideoTracks()
+  if (!track) return
+  for (const { pc } of peers.values()) {
+    for (const sender of pc.getSenders()) await sender.replaceTrack(track).catch(() => {})
+  }
+}
+
+/** The strip's first setting, when the phone has more than one camera. */
+function cameraParam(track: MediaStreamTrack): Param[] {
+  if (cameras.length < 2) return []
+  const options = cameras.map((device, index): [string, string] => [named(device, index), device.deviceId])
+  const current = track.getSettings().deviceId ?? ""
+  const pick = (deviceId: string) => {
+    const before = chosen
+    chosen = deviceId
+    swap(() => {
+      chosen = before
+    })
+  }
+  return [choice(t.camera, options, current, pick, brief)]
 }
 
 /** The size and rate chosen, as the camera is asked for them. */
@@ -203,7 +271,7 @@ $("chips").addEventListener("scroll", more)
 function controls() {
   const [track] = stream?.getVideoTracks() ?? []
   if (!track) return
-  params = cameraParams(track, wanted, t.controls, reshape)
+  params = [...cameraParam(track), ...cameraParams(track, wanted, t.controls, reshape)]
   editing = -1
   $("editor").replaceChildren()
   $("chips").replaceChildren(
@@ -321,6 +389,7 @@ async function start() {
     return notice(t.denied, t.retry)
   }
   video.srcObject = stream
+  await findCameras()
   controls()
   stayAwake()
   connect()
@@ -328,26 +397,14 @@ async function start() {
 
 $("retry").onclick = start
 
-$("flip").onclick = async () => {
-  if (!stream) return
-  const before = facing
+$("flip").onclick = () => {
+  const before = { facing, chosen }
   facing = facing === "environment" ? "user" : "environment"
-  // Some phones cannot open a second camera while the first is in use.
-  for (const track of stream.getTracks()) track.stop()
-  try {
-    stream = await camera()
-  } catch {
-    facing = before
-    stream = await camera().catch(() => null)
-    if (!stream) return notice(t.denied, t.retry)
-  }
-  video.srcObject = stream
-  controls()
-  const [track] = stream.getVideoTracks()
-  if (!track) return
-  for (const { pc } of peers.values()) {
-    for (const sender of pc.getSenders()) await sender.replaceTrack(track).catch(() => {})
-  }
+  chosen = null
+  swap(() => {
+    facing = before.facing
+    chosen = before.chosen
+  })
 }
 
 start()

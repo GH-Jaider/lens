@@ -83,18 +83,39 @@ export interface Param {
   open(into: HTMLElement, changed: () => void): void
 }
 
-/** A few options, one of them chosen. */
-function choice<T>(label: string, options: [text: string, value: T][], current: T, pick: (value: T) => void): Param {
-  const param: Param = {
+/** A setting with a few options, which other code may also set. */
+export interface Chosen<T> extends Param {
+  choose(value: T): void
+}
+
+/**
+ * A few options, one of them chosen. `brief` gives the strip a shorter name
+ * than the button has, for options whose full name would not fit there.
+ */
+export function choice<T>(
+  label: string,
+  options: [text: string, value: T][],
+  current: T,
+  pick: (value: T) => void,
+  brief: (text: string) => string = (text) => text,
+): Chosen<T> {
+  let chosen = current
+  const param: Chosen<T> = {
+    // For when something else decides: moving a shutter time makes exposure manual.
+    choose(value) {
+      chosen = value
+      param.value = brief(options.find(([, other]) => other === value)?.[0] ?? "")
+    },
     label,
-    value: options.find(([, value]) => value === current)?.[0] ?? "",
+    value: brief(options.find(([, value]) => value === current)?.[0] ?? ""),
     open(into, changed) {
       const buttons = element("div", "seg")
       for (const [text, value] of options) {
-        const button = element("button", text === param.value ? "on" : "", text)
+        const button = element("button", value === chosen ? "on" : "", text)
         button.onclick = () => {
           for (const other of buttons.children) other.classList.toggle("on", other === button)
-          param.value = text
+          chosen = value
+          param.value = brief(text)
           pick(value)
           changed()
         }
@@ -221,7 +242,7 @@ export function cameraParams(track: MediaStreamTrack, wanted: Wanted, t: Texts, 
   // moving that value switches to it. One that cannot only offers to lock what
   // the camera chose, which shows as nothing changing: that is the point.
   type Mode = "exposureMode" | "whiteBalanceMode" | "focusMode"
-  const mode = (label: string, key: Mode, list: string[] | undefined, settable: boolean): Param | null => {
+  const mode = (label: string, key: Mode, list: string[] | undefined, settable: boolean): Chosen<string> | null => {
     if (!list?.includes("manual") || !list.includes("continuous")) return null
     const options: [string, string][] = [
       [t.auto, "continuous"],
@@ -239,7 +260,7 @@ export function cameraParams(track: MediaStreamTrack, wanted: Wanted, t: Texts, 
     const range = can.exposureTime
     params.push(
       slider(t.shutter, range, now.exposureTime ?? range.min, shutterSpeed, (exposureTime) => {
-        exposure.value = t.manual
+        exposure.choose("manual")
         set({ exposureMode: "manual", exposureTime })
       }),
     )
@@ -248,7 +269,7 @@ export function cameraParams(track: MediaStreamTrack, wanted: Wanted, t: Texts, 
     const show = (iso: number) => String(Math.round(iso))
     params.push(
       slider(t.iso, can.iso, now.iso ?? can.iso.min, show, (iso) => {
-        exposure.value = t.manual
+        exposure.choose("manual")
         set({ exposureMode: "manual", iso })
       }),
     )
@@ -259,7 +280,7 @@ export function cameraParams(track: MediaStreamTrack, wanted: Wanted, t: Texts, 
     const show = (kelvin: number) => `${Math.round(kelvin)} K`
     params.push(
       slider(t.temperature, range, now.colorTemperature ?? range.min, show, (colorTemperature) => {
-        white.value = t.manual
+        white.choose("manual")
         set({ whiteBalanceMode: "manual", colorTemperature })
       }),
     )
@@ -270,7 +291,7 @@ export function cameraParams(track: MediaStreamTrack, wanted: Wanted, t: Texts, 
     const show = (metres: number) => `${metres.toFixed(1)} m`
     params.push(
       slider(t.distance, range, now.focusDistance ?? range.min, show, (focusDistance) => {
-        focus.value = t.manual
+        focus.choose("manual")
         set({ focusMode: "manual", focusDistance })
       }),
     )
