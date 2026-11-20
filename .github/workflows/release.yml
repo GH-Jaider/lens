@@ -58,3 +58,18 @@ jobs:
           releaseBody: Lens __VERSION__
           releaseDraft: true
           args: ${{ matrix.args }}
+
+  # One plainly named download per system, instead of everything a build makes.
+  tidy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/release.ts "$GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ github.token }}

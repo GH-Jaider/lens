@@ -6,13 +6,11 @@ Scan a QR code and your phone becomes a camera in OBS. Nothing to install on the
 
 ## Download
 
-Get the installer for your system from the [latest release](https://github.com/GH-Jaider/lens/releases/latest).
-
-| System | File | First launch |
+| Your computer | Download | The first time you open it |
 |---|---|---|
-| macOS (Apple Silicon and Intel) | `.dmg` | Lens is not signed with an Apple account, so macOS blocks it once. Open **System Settings → Privacy & Security** and choose **Open Anyway**. |
-| Windows 10 and 11 | `-setup.exe` | Windows SmartScreen warns about an unknown publisher. Choose **More info → Run anyway**. Allow Lens through the firewall when asked. |
-| Linux | `.AppImage` or `.deb` | Make the AppImage executable and run it. Only the AppImage updates itself. |
+| Mac | [Lens for Mac](https://github.com/GH-Jaider/lens/releases/latest/download/Lens-macOS.dmg) | macOS blocks it once, because Lens is not signed with an Apple account. Open **System Settings → Privacy & Security** and choose **Open Anyway**. |
+| Windows | [Lens for Windows](https://github.com/GH-Jaider/lens/releases/latest/download/Lens-Windows.exe) | Windows warns about an unknown publisher. Choose **More info → Run anyway**, and allow Lens through the firewall when asked. |
+| Linux | [AppImage](https://github.com/GH-Jaider/lens/releases/latest/download/Lens-Linux.AppImage) or [.deb](https://github.com/GH-Jaider/lens/releases/latest/download/Lens-Linux.deb) | Make the AppImage executable and run it. |
 
 Lens tells you in its window when a newer version is out and installs it when you ask.
 
@@ -25,6 +23,12 @@ Lens tells you in its window when a newer version is out and installs it when yo
 Closing the window leaves Lens in the menu bar or tray; Quit is in its menu.
 
 The video goes straight from the phone to OBS over the local network (WebRTC). Lens only introduces the two, and nothing leaves your network.
+
+### Picture
+
+The phone sends 1080p at 30 frames per second unless told otherwise, and as much of it as the Wi‑Fi carries. The sliders button on the phone opens the camera's controls: resolution, frame rate and quality on every phone, and whatever else that phone's browser can set. Android phones usually offer zoom, light, shutter, ISO, white balance and focus; iPhones offer fewer. The same sheet shows what is really being sent.
+
+The eye on the preview in the Lens window turns the preview off; OBS keeps the picture.
 
 ### OBS
 

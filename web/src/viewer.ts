@@ -3,11 +3,16 @@
 // connection before it.
 import type { Signal, ViewerMessage } from "./types.ts"
 
-/** `obs` marks the page inside OBS, which also tells Lens what it is showing. */
-export function startViewer(video: HTMLVideoElement, whenLive: (live: boolean) => void, obs = false): void {
+/**
+ * `obs` marks the page inside OBS, which also tells Lens what it is showing.
+ * Returns how to stop: the phone then no longer sends this viewer anything.
+ */
+export function startViewer(video: HTMLVideoElement, whenLive: (live: boolean) => void, obs = false): () => void {
   let id: number | null = null
   let pc: RTCPeerConnection | null = null
   let waiting: RTCIceCandidateInit[] = []
+  let events: EventSource | null = null
+  let stopped = false
 
   const send = (data: Signal) =>
     fetch(`/signal?id=${id}`, {
@@ -66,8 +71,9 @@ export function startViewer(video: HTMLVideoElement, whenLive: (live: boolean) =
   // One message at a time, in the order they arrived.
   let queue: Promise<void> = Promise.resolve()
   function connect() {
-    const events = new EventSource(obs ? "/events?obs=1" : "/events")
-    events.onmessage = (event) => {
+    const source = new EventSource(obs ? "/events?obs=1" : "/events")
+    events = source
+    source.onmessage = (event) => {
       const message = JSON.parse(event.data) as ViewerMessage
       queue = queue
         .then(async () => {
@@ -79,12 +85,18 @@ export function startViewer(video: HTMLVideoElement, whenLive: (live: boolean) =
         })
         .catch(() => {})
     }
-    events.onerror = () => {
+    source.onerror = () => {
       queue = queue.then(reset)
       // A browser gives up for good when Lens is not running; this page (OBS
       // keeps it open for days) has to find Lens again when it comes back.
-      if (events.readyState === EventSource.CLOSED) setTimeout(connect, 2000)
+      if (!stopped && source.readyState === EventSource.CLOSED) setTimeout(connect, 2000)
     }
   }
   connect()
+
+  return () => {
+    stopped = true
+    events?.close()
+    queue = queue.then(reset)
+  }
 }

@@ -40,6 +40,15 @@
     background: rgba(0, 0, 0, 0.62); color: #f4f4f5; font-size: 12px; font-weight: 500; opacity: 0;
   }
   .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #4cc38a; }
+  #eye {
+    inset: 10px 10px auto auto; width: 28px; height: 28px; border-radius: 50%; border: 0; padding: 0;
+    display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.62); color: #f4f4f5;
+    opacity: 0; pointer-events: none;
+  }
+  #eye svg { width: 16px; height: 16px; }
+  #eye.on { opacity: 1; pointer-events: auto; }
+  #eye .shut, #eye.off .open { display: none; }
+  #eye.off .shut { display: block; }
   .stage.live #video, .stage.live .badge, .stage.offline #offline { opacity: 1; }
   .stage.offline #qr, .stage.live #qr { opacity: 0; }
 
@@ -84,6 +93,10 @@
     <div id="offline"></div>
     <video id="video" autoplay muted playsinline></video>
     <div class="badge" id="badge"></div>
+    <button id="eye">
+      <svg class="open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+      <svg class="shut" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5.7a8.7 8.7 0 0 1 2-.2c6 0 9.5 6.5 9.5 6.5a16 16 0 0 1-2.4 3.2M6.2 7.4A15.600 15.600 0 0 0 2.500 12S6 18.500 12 18.500a8.800 8.800 0 0 0 4.300-1.100"/><path d="M9.900 9.900a3 3 0 0 0 4.200 4.200"/><path d="M3.500 3.500l17 17"/></svg>
+    </button>
   </div>
 
   <div class="head"><h1 id="title"></h1><button id="update"></button></div>

@@ -1,5 +1,6 @@
 // The page the phone opens from the QR code: it sends the camera to every
 // viewer (the OBS source and the preview in the app window).
+import { sending, showControls, type Wanted } from "./controls.ts"
 import { $, type PhoneMessage, pick, type Signal } from "./types.ts"
 
 const t = pick({
@@ -13,6 +14,28 @@ const t = pick({
     replaced: "Another phone took over as the camera.",
     retry: "Try again",
     again: "Use this phone",
+    done: "Done",
+    controls: {
+      resolution: "Resolution",
+      fps: "Frames",
+      quality: "Quality",
+      normal: "Normal",
+      high: "High",
+      zoom: "Zoom",
+      light: "Light",
+      on: "On",
+      off: "Off",
+      exposure: "Exposure",
+      shutter: "Shutter",
+      iso: "ISO",
+      brightness: "Brightness",
+      white: "White balance",
+      temperature: "Temperature",
+      focus: "Focus",
+      distance: "Distance",
+      auto: "Auto",
+      manual: "Manual",
+    },
   },
   es: {
     starting: "Iniciando la cámara",
@@ -24,6 +47,28 @@ const t = pick({
     replaced: "Otro celular pasó a ser la cámara.",
     retry: "Reintentar",
     again: "Usar este celular",
+    done: "Listo",
+    controls: {
+      resolution: "Resolución",
+      fps: "Cuadros",
+      quality: "Calidad",
+      normal: "Normal",
+      high: "Alta",
+      zoom: "Zoom",
+      light: "Luz",
+      on: "Sí",
+      off: "No",
+      exposure: "Exposición",
+      shutter: "Obturador",
+      iso: "ISO",
+      brightness: "Brillo",
+      white: "Balance",
+      temperature: "Temperatura",
+      focus: "Enfoque",
+      distance: "Distancia",
+      auto: "Auto",
+      manual: "Manual",
+    },
   },
 })
 
@@ -40,6 +85,8 @@ let stream: MediaStream | null = null
 let facing: "environment" | "user" = "environment"
 let id: number | null = null
 let events: EventSource | null = null
+// The camera is asked for what was chosen; it gives the closest it has.
+const wanted: Wanted = { height: 1080, fps: 30, mbps: 8 }
 
 function status(text: string, live = false) {
   $("status").textContent = text
@@ -67,8 +114,40 @@ const send = (to: number, data: Signal) =>
 function camera(): Promise<MediaStream> {
   return navigator.mediaDevices.getUserMedia({
     audio: false,
-    video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+    video: { facingMode: { ideal: facing }, ...shape() },
   })
+}
+
+/** The size and rate chosen, as the camera is asked for them. */
+function shape(): MediaTrackConstraints {
+  const width = Math.round((wanted.height * 16) / 9)
+  return { width: { ideal: width }, height: { ideal: wanted.height }, frameRate: { ideal: wanted.fps } }
+}
+
+/** How much the phone may send: the link is the local network, so quality
+    matters more than thrift. */
+async function limit(sender: RTCRtpSender) {
+  try {
+    const params = sender.getParameters()
+    const [encoding] = params.encodings
+    if (!encoding) return
+    encoding.maxBitrate = wanted.mbps * 1_000_000
+    await sender.setParameters(params)
+  } catch {
+    // The browser keeps its own limit.
+  }
+}
+
+/** Applies a new size, rate or quality to the camera and to every viewer. */
+async function reshape() {
+  const [track] = stream?.getVideoTracks() ?? []
+  await track?.applyConstraints(shape()).catch(() => {})
+  for (const { pc } of peers.values()) for (const sender of pc.getSenders()) await limit(sender)
+}
+
+function controls() {
+  const [track] = stream?.getVideoTracks() ?? []
+  if (track) showControls($("controls"), track, wanted, t.controls, reshape)
 }
 
 function drop(viewer: number) {
@@ -86,18 +165,7 @@ async function offer(viewer: number) {
   const pc = new RTCPeerConnection()
   peers.set(viewer, { pc, waiting: [] })
   for (const track of stream.getTracks()) {
-    const sender = pc.addTrack(track, stream)
-    // The link is the local network, so quality matters more than thrift.
-    try {
-      const params = sender.getParameters()
-      const [encoding] = params.encodings
-      if (encoding) {
-        encoding.maxBitrate = 8_000_000
-        await sender.setParameters(params)
-      }
-    } catch {
-      // The browser keeps its own limit.
-    }
+    await limit(pc.addTrack(track, stream))
   }
   pc.onicecandidate = (event) => {
     if (event.candidate) send(viewer, { candidate: event.candidate.toJSON() })
@@ -183,8 +251,28 @@ async function start() {
     return notice(t.denied, t.retry)
   }
   video.srcObject = stream
+  controls()
   stayAwake()
   connect()
+}
+
+// The sheet says what is really being sent while it is open.
+const sent = { bytes: 0, at: 0 }
+let ticking: ReturnType<typeof setInterval> | undefined
+$("done").textContent = t.done
+$("tune").onclick = () => {
+  controls()
+  document.body.classList.add("sheet-on")
+  const tick = async () => {
+    const live = [...peers.values()].find((peer) => peer.pc.connectionState === "connected")
+    $("sending").textContent = live ? await sending(live.pc, sent) : ""
+  }
+  tick()
+  ticking = setInterval(tick, 1000)
+}
+$("done").onclick = () => {
+  document.body.classList.remove("sheet-on")
+  clearInterval(ticking)
 }
 
 $("retry").onclick = start
@@ -203,6 +291,7 @@ $("flip").onclick = async () => {
     if (!stream) return notice(t.denied, t.retry)
   }
   video.srcObject = stream
+  controls()
   const [track] = stream.getVideoTracks()
   if (!track) return
   for (const { pc } of peers.values()) {

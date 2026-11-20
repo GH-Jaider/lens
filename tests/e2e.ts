@@ -172,6 +172,49 @@ try {
     await until(() => phone.evaluate(`document.getElementById("status").classList.contains("live")`)),
   )
 
+  // The camera's controls: Chrome's test camera can change size and rate.
+  await phone.evaluate(`document.getElementById("tune").click()`)
+  const offered = await until(() =>
+    phone.evaluate(`[...document.querySelectorAll("#controls .seg button")].map((b) => b.textContent).join(" ")`),
+  )
+  check(
+    "the phone offers the camera's controls",
+    String(offered).includes("720p") && String(offered).includes("Normal"),
+    String(offered),
+  )
+  check(
+    "the phone says what it is sending",
+    Boolean(
+      await until(() => phone.evaluate(`/\\d+×\\d+ · \\d+ fps/.test(document.getElementById("sending").textContent)`)),
+    ),
+  )
+  await phone.evaluate(
+    `[...document.querySelectorAll("#controls .seg button")].find((b) => b.textContent === "720p").click()`,
+  )
+  const smaller = await until(() =>
+    viewer.evaluate(
+      `(() => { const v = document.querySelector("video"); return Math.max(v.videoWidth, v.videoHeight) <= 1280 && v.videoWidth > 0 })()`,
+    ),
+  )
+  check(
+    "choosing 720p changes what the camera gives",
+    (await phone.evaluate(
+      `document.querySelector("video").srcObject.getVideoTracks()[0].getSettings().height === 720`,
+    )) && Boolean(smaller),
+  )
+  await phone.evaluate(`document.getElementById("done").click()`)
+
+  // The preview can be switched off without OBS losing the picture.
+  await app.evaluate(`document.getElementById("eye").click()`)
+  check(
+    "hiding the preview stops it",
+    await until(() => app.evaluate(`!document.getElementById("stage").classList.contains("live")`)),
+  )
+  await delay(1000)
+  check("OBS keeps the picture meanwhile", Boolean(await viewer.evaluate(picture)))
+  await app.evaluate(`document.getElementById("eye").click()`)
+  check("showing the preview brings it back", Boolean(await until(() => app.evaluate(picture))))
+
   await phone.evaluate(`document.getElementById("flip").click()`)
   await delay(1500)
   const clock = async () => Number(await viewer.evaluate(`document.querySelector("video").currentTime`))

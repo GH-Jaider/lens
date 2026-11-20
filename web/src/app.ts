@@ -25,6 +25,9 @@ interface Texts {
   camOff: Row
   foot: Record<ObsCase, string>
   noPreview: string
+  previewOff: string
+  hide: string
+  show: string
   update: string
   updating: string
   copy: string
@@ -60,6 +63,9 @@ const en: Texts = {
     restart: "Open OBS again",
   },
   noPreview: "The picture goes straight to OBS. This window cannot preview it on this system.",
+  previewOff: "Preview off. OBS still gets the picture.",
+  hide: "Hide the preview",
+  show: "Show the preview",
   update: "Update to",
   updating: "Updating…",
   copy: "Copy OBS link",
@@ -95,6 +101,9 @@ const es: Texts = {
     restart: "Abre OBS de nuevo",
   },
   noPreview: "La imagen va directo a OBS. Esta ventana no puede mostrarla en este sistema.",
+  previewOff: "Vista previa apagada. OBS sigue recibiendo la imagen.",
+  hide: "Ocultar la vista previa",
+  show: "Mostrar la vista previa",
   update: "Actualizar a",
   updating: "Actualizando…",
   copy: "Copiar enlace",
@@ -110,6 +119,31 @@ $("badge").textContent = t.badge
 let state: UiState | null = null
 let live = false
 let stuckSince = 0
+
+// The preview can be switched off: the window then receives no video at all,
+// and the choice is remembered. A web view may refuse to remember; that is fine.
+const remembered = (() => {
+  try {
+    return localStorage.getItem("preview") !== "off"
+  } catch {
+    return true
+  }
+})()
+let preview = remembered
+let stopPreview: (() => void) | null = null
+
+function watch() {
+  stopPreview?.()
+  stopPreview = null
+  live = false
+  if (preview && canPreview) {
+    stopPreview = startViewer($<HTMLVideoElement>("video"), (now) => {
+      live = now
+      render()
+    })
+  }
+  render()
+}
 
 function row(n: 1 | 2 | 3, [title, detail]: Row, mark?: Mark) {
   $(`a${n}`).textContent = title
@@ -136,8 +170,11 @@ function render() {
   }
   // Without a preview the phone still reaches OBS, so say that instead of
   // leaving the code on screen.
-  const blind = state.phone && !canPreview
-  $("offline").textContent = blind ? t.noPreview : t.offlineBody
+  const blind = state.phone && (!canPreview || !preview)
+  $("offline").textContent = !blind ? t.offlineBody : canPreview ? t.previewOff : t.noPreview
+  $("eye").classList.toggle("on", state.phone && canPreview)
+  $("eye").classList.toggle("off", !preview)
+  $("eye").title = preview ? t.hide : t.show
   $("stage").classList.toggle("offline", blind || (!state.url && !live))
   $("stage").classList.toggle("live", live)
   $("title").textContent = state.phone ? t.live : state.url ? t.scan : t.offline
@@ -185,11 +222,16 @@ function follow() {
 }
 follow()
 
-if (canPreview) {
-  startViewer($<HTMLVideoElement>("video"), (now) => {
-    live = now
-    render()
-  })
+watch()
+
+$("eye").onclick = () => {
+  preview = !preview
+  try {
+    localStorage.setItem("preview", preview ? "on" : "off")
+  } catch {
+    // Not remembered; it still works until the window closes.
+  }
+  watch()
 }
 
 $("update").onclick = () => fetch("/update", { method: "POST" }).catch(() => {})
