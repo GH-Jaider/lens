@@ -32,6 +32,7 @@ const t = pick({
       shutter: "Shutter",
       iso: "ISO",
       wb: "WB",
+      whites: ["Tungsten", "Fluor.", "Daylight", "Cloudy", "Shade"],
       focus: "Focus",
       auto: "Auto",
     },
@@ -63,6 +64,7 @@ const t = pick({
       shutter: "Obturador",
       iso: "ISO",
       wb: "WB",
+      whites: ["Tungsteno", "Fluor.", "Día", "Nublado", "Sombra"],
       focus: "Foco",
       auto: "Auto",
     },
@@ -108,6 +110,19 @@ setInterval(async () => {
   figures = live ? await sending(live.pc, sent) : ""
   refresh()
 }, 1000)
+
+/**
+ * Tells Lens what the phone's camera said, so that what goes wrong on a phone
+ * can be read on the computer: which cameras it lists, what was asked of the
+ * one in use, and whether it took. It stays on the computer.
+ */
+function report(entry: object) {
+  fetch(`/diag?t=${token}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ at: new Date().toISOString(), ...entry }),
+  }).catch(() => {})
+}
 
 const send = (to: number, data: Signal) =>
   fetch(`/signal?t=${token}&id=${id}`, {
@@ -165,6 +180,11 @@ function camera(): Promise<MediaStream> {
  */
 async function findLenses() {
   const devices = await navigator.mediaDevices.enumerateDevices().catch(() => [])
+  report({
+    event: "cameras",
+    browser: navigator.userAgent,
+    listed: devices.filter((device) => device.kind === "videoinput").map((device) => device.label),
+  })
   const found = devices
     .filter((device) => device.kind === "videoinput" && device.deviceId)
     .map((device) => {
@@ -190,26 +210,45 @@ async function findLenses() {
   )
 }
 
-/** Opens the camera now asked for in place of the one in use. `undo` puts the
-    request back as it was if the phone refuses. */
-async function swap(undo: () => void) {
-  if (!stream) return
-  // Some phones cannot open a second camera while the first is in use.
-  for (const track of stream.getTracks()) track.stop()
-  try {
-    stream = await camera()
-  } catch {
-    undo()
-    stream = await camera().catch(() => null)
+/** A phone takes a moment to let go of one camera before it can open the
+    next, and says "could not start" if asked too soon: so, a few tries. */
+async function open(): Promise<MediaStream | null> {
+  for (const wait of [0, 350, 800, 1500]) {
+    if (wait) await new Promise((done) => setTimeout(done, wait))
+    try {
+      return await camera()
+    } catch (error) {
+      report({ event: "camera refused", wait, error: String(error), chosen, facing })
+    }
+  }
+  return null
+}
+
+/**
+ * Opens the camera now asked for in place of the one in use. `undo` puts the
+ * request back as it was if the phone refuses. One swap at a time: a second
+ * choice made while a camera is opening waits its turn.
+ */
+let swapping: Promise<void> = Promise.resolve()
+function swap(undo: () => void) {
+  swapping = swapping.then(async () => {
+    if (!stream) return
+    // Some phones cannot open a second camera while the first is in use.
+    for (const track of stream.getTracks()) track.stop()
+    stream = await open()
+    if (!stream) {
+      undo()
+      stream = await open()
+    }
     if (!stream) return notice(t.denied, t.retry)
-  }
-  video.srcObject = stream
-  controls()
-  const [track] = stream.getVideoTracks()
-  if (!track) return
-  for (const { pc } of peers.values()) {
-    for (const sender of pc.getSenders()) await sender.replaceTrack(track).catch(() => {})
-  }
+    video.srcObject = stream
+    controls()
+    const [track] = stream.getVideoTracks()
+    if (!track) return
+    for (const { pc } of peers.values()) {
+      for (const sender of pc.getSenders()) await sender.replaceTrack(track).catch(() => {})
+    }
+  })
 }
 
 /** The strip's first setting, when the phone has more than one camera. */
@@ -276,7 +315,8 @@ $("chips").addEventListener("scroll", more)
 function controls() {
   const [track] = stream?.getVideoTracks() ?? []
   if (!track) return
-  params = [...lensParam(track), ...cameraParams(track, wanted, t.controls, shape, limitAll)]
+  params = [...lensParam(track), ...cameraParams(track, wanted, t.controls, shape, limitAll, report)]
+  report({ event: "camera", settings: track.getSettings(), can: track.getCapabilities?.() ?? {}, offered: lenses })
   editing = -1
   $("editor").replaceChildren()
   $("chips").replaceChildren(
@@ -412,7 +452,7 @@ async function comeBack() {
   const away = Date.now() - leftAt
   const [track] = stream.getVideoTracks()
   if (!track || track.readyState === "ended") {
-    stream = await camera().catch(() => null)
+    stream = await open()
     if (!stream) return notice(t.denied, t.retry)
     video.srcObject = stream
     controls()

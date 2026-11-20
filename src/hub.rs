@@ -70,6 +70,9 @@ pub struct Hub {
     pub fit: watch::Sender<(f64, f64)>,
     /// Rung when the person asks for the waiting update.
     pub install: Notify,
+    /// Where the phone's account of its own camera is kept, for looking into
+    /// what goes wrong on a phone nobody at the computer can see.
+    pub diagnostics: std::path::PathBuf,
     /// Travels in the QR code, so only someone who saw the screen can send video.
     pub token: String,
 }
@@ -79,12 +82,13 @@ fn send(tx: &Tx, message: Value) {
 }
 
 impl Hub {
-    pub fn new(token: String, ui: UiState) -> Self {
+    pub fn new(token: String, ui: UiState, diagnostics: std::path::PathBuf) -> Self {
         Self {
             inner: Mutex::default(),
             ui: watch::Sender::new(ui),
             fit: watch::Sender::new((0.0, 0.0)),
             install: Notify::new(),
+            diagnostics,
             token,
         }
     }

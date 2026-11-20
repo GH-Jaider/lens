@@ -285,6 +285,13 @@ try {
   })()`
   check("a setting at the end of the strip comes fully into view", await phone.evaluate(inside))
 
+  // What the phone said about its camera is kept on the computer.
+  const account = fs.readFileSync(path.join(temp, "data", "phone.jsonl"), "utf8")
+  check(
+    "the computer keeps the phone's account of its camera",
+    account.includes('"event":"cameras"') && account.includes('"outcome":"ok"'),
+  )
+
   // Leaving the page and coming back: the phone takes the camera away and the
   // line to the computer goes stale. The page has to pick both up by itself.
   await phone.evaluate(`(() => {

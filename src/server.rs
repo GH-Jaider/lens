@@ -119,6 +119,7 @@ pub async fn start(data_dir: PathBuf, with_obs: bool) -> Result<Started, String>
     let hub = Arc::new(Hub::new(
         token.clone(),
         UiState { view_url: view_url.clone(), obs: "off", version: env!("CARGO_PKG_VERSION"), ..UiState::default() },
+        data_dir.join("phone.jsonl"),
     ));
 
     let (cert, key) = tls::cert_for(&data_dir, IpAddr::V4(Ipv4Addr::LOCALHOST))?;
@@ -144,6 +145,7 @@ pub async fn start(data_dir: PathBuf, with_obs: bool) -> Result<Started, String>
         .route("/events", get(events))
         .route("/signal", post(signal))
         .route("/ping", post(ping))
+        .route("/diag", post(diag))
         .with_state(Ctx { hub: hub.clone(), phone_side: true });
 
     let local = tokio::net::TcpListener::from_std(local).map_err(|error| error.to_string())?;
@@ -277,5 +279,27 @@ async fn install(State(ctx): State<Ctx>) -> StatusCode {
 /// Ko-fi, in the computer's browser: the app's window opens no pages itself.
 async fn support() -> StatusCode {
     let _ = open::that("https://ko-fi.com/hit_here");
+    StatusCode::NO_CONTENT
+}
+
+/// What the phone says about its camera, one line each. Kept short: once the
+/// file is large it starts over.
+async fn diag(State(ctx): State<Ctx>, Query(params): Query<Params>, body: String) -> StatusCode {
+    use std::io::Write;
+    if params.t.as_deref() != Some(ctx.hub.token.as_str()) {
+        return StatusCode::FORBIDDEN;
+    }
+    if body.len() > 64 * 1024 {
+        return StatusCode::PAYLOAD_TOO_LARGE;
+    }
+    let file = &ctx.hub.diagnostics;
+    let large = std::fs::metadata(file).is_ok_and(|meta| meta.len() > 2 * 1024 * 1024);
+    if let Some(folder) = file.parent() {
+        let _ = std::fs::create_dir_all(folder);
+    }
+    let opened = std::fs::OpenOptions::new().create(true).append(!large).write(true).truncate(large).open(file);
+    if let Ok(mut opened) = opened {
+        let _ = writeln!(opened, "{}", body.replace('\n', " "));
+    }
     StatusCode::NO_CONTENT
 }

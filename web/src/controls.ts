@@ -55,6 +55,8 @@ export interface Texts {
   shutter: string
   iso: string
   wb: string
+  /** Tungsten, fluorescent, daylight, cloudy, shade: in that order. */
+  whites: string[]
   focus: string
   auto: string
 }
@@ -129,6 +131,7 @@ function shutterSpeed(units: number): string {
  * along: a browser takes each request as the whole of what is wanted, so one
  * that left them out would let the camera fall back to its own size.
  * `rate` is called when the bitrate is chosen, which concerns the connection.
+ * `report` gets what was asked of the camera and what came of it.
  */
 export function cameraParams(
   track: MediaStreamTrack,
@@ -136,17 +139,22 @@ export function cameraParams(
   t: Texts,
   basic: () => MediaTrackConstraints,
   rate: () => void,
+  report: (entry: object) => void,
 ): Param[] {
   const can: Capabilities = track.getCapabilities?.() ?? {}
   const now: Settings = track.getSettings()
   const params: Param[] = []
 
-  // Each group is asked for separately: a browser that cannot honour one part
-  // of a group drops that whole group, and must not drop the others with it.
+  // What has been set by hand, by group (zoom, exposure, white balance…).
+  // They always go to the camera together, as ONE set: browsers have long
+  // only honoured the first set of a request, and take each request as the
+  // whole of what is wanted, so a setting left out could be let go.
   const extras = new Map<string, Extra>()
   let running = false
   let again = false
-  async function apply() {
+  let resize = false
+  async function apply(withSize = false) {
+    resize ||= withSize
     if (running) {
       again = true
       return
@@ -154,8 +162,20 @@ export function cameraParams(
     running = true
     do {
       again = false
-      const advanced = [...extras.values()] as MediaTrackConstraintSet[]
-      await track.applyConstraints({ ...basic(), advanced }).catch(() => {})
+      const merged: Extra = Object.assign({}, ...extras.values())
+      const advanced = Object.keys(merged).length ? [merged as MediaTrackConstraintSet] : []
+      // The size and rate only go along when they are what changed: asking for
+      // them again makes some phones set the whole camera up afresh.
+      const asked: MediaTrackConstraints = resize ? { ...basic(), advanced } : { advanced }
+      resize = false
+      const started = performance.now()
+      // A phone that never answers must not leave every later change waiting.
+      const slow = new Promise<never>((_, fail) => setTimeout(() => fail(new Error("no answer in 3 s")), 3000))
+      const outcome = await Promise.race([track.applyConstraints(asked), slow]).then(
+        () => "ok",
+        (error) => String(error),
+      )
+      report({ event: "apply", asked, outcome, ms: Math.round(performance.now() - started), now: track.getSettings() })
     } while (again)
     running = false
   }
@@ -207,7 +227,7 @@ export function cameraParams(
     params.push(
       choice(t.resolution, options, wanted.height, (height) => {
         wanted.height = height
-        apply()
+        apply(true)
       }),
     )
   }
@@ -217,7 +237,7 @@ export function cameraParams(
     params.push(
       choice(t.fps, options, wanted.fps, (fps) => {
         wanted.fps = fps
-        apply()
+        apply(true)
       }),
     )
   }
@@ -293,24 +313,31 @@ export function cameraParams(
       ),
     )
   }
-  const tint: Extra = {}
-  const white = mode("white", "whiteBalanceMode", can.whiteBalanceMode, tint)
-  if (white && usable(can.colorTemperature)) {
+  // White balance by name, not by degree: phones only have a handful of
+  // settings for it and take the nearest to whatever temperature is asked, so
+  // a fine scale would move with nothing to show for it most of the way.
+  if (can.whiteBalanceMode?.includes("manual") && usable(can.colorTemperature)) {
     const range = can.colorTemperature
-    const show = (kelvin: number) => `${Math.round(kelvin / 50) * 50}K`
-    params.push(
-      scale(
-        t.wb,
-        range,
-        now.colorTemperature ?? (range.min + range.max) / 2,
-        show,
-        (colorTemperature) => {
-          tint.colorTemperature = colorTemperature
-          white.set(false)
-        },
-        { auto: white },
-      ),
-    )
+    const presets = ([2850, 4250, 5000, 6000, 7000] as const)
+      .map((kelvin, index): [string, number] => [t.whites[index] ?? `${kelvin}K`, kelvin])
+      .filter(([, kelvin]) => kelvin >= range.min && kelvin <= range.max)
+    if (presets.length) {
+      const options: [string, number][] = [[t.auto, 0], ...presets]
+      const byHand = now.whiteBalanceMode === "manual" && now.colorTemperature
+      const nearest = presets.reduce((best, preset) =>
+        Math.abs(preset[1] - (now.colorTemperature ?? 0)) < Math.abs(best[1] - (now.colorTemperature ?? 0))
+          ? preset
+          : best,
+      )
+      params.push(
+        choice(t.wb, options, byHand ? nearest[1] : 0, (kelvin) =>
+          set(
+            "white",
+            kelvin ? { whiteBalanceMode: "manual", colorTemperature: kelvin } : { whiteBalanceMode: "continuous" },
+          ),
+        ),
+      )
+    }
   }
   const depth: Extra = {}
   const focus = mode("focus", "focusMode", can.focusMode, depth)
