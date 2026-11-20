@@ -11,7 +11,7 @@
     "lint": "biome check . && cargo fmt --check && cargo clippy --all-targets -- -D warnings",
     "fix": "biome check --write . && cargo fmt",
     "test": "cargo build && node tests/e2e.ts && node tests/smoke.ts",
-    "check": "npm run typecheck && npm run lint && npm test"
+    "check": "pnpm typecheck && pnpm lint && pnpm test"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.8",
@@ -19,5 +19,12 @@
     "@types/node": "^24.19.2",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@biomejs/biome"
+    ]
   }
 }

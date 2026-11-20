@@ -7,7 +7,7 @@ fn main() {
     let built = Command::new("node").arg("scripts/web.ts").status();
     match built {
         Ok(status) if status.success() => {}
-        Ok(_) => panic!("The pages did not build. Run `npm install` first if you have not."),
+        Ok(_) => panic!("The pages did not build. Run `pnpm install` first if you have not."),
         Err(error) => panic!("Node is needed to build the pages: {error}"),
     }
     tauri_build::build()

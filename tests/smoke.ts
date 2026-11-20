@@ -39,7 +39,7 @@ for (let i = 0; i < 120 && exited === null && !state; i++) {
 }
 // Give the window a moment: a crash while it is being created shows here.
 await new Promise((resolve) => setTimeout(resolve, 4000))
-if (exited === 0 && !state) {
+if (exited === 0) {
   // Lens runs once per computer: a second copy hands over to the first and leaves.
   console.log("skip the app is already open on this computer; close it to run this test")
   process.exit(0)

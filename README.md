@@ -40,22 +40,22 @@ Without the WebSocket server, use **Copy OBS link** in Lens and add it by hand a
 
 ## Build
 
-Needs Rust, Node 22+ and, on Linux, the [Tauri system libraries](https://tauri.app/start/prerequisites/).
+Needs Rust, Node 22.18+, pnpm and, on Linux, the [Tauri system libraries](https://tauri.app/start/prerequisites/).
 
 ```sh
-npm install
-npm run app      # installers in target/release/bundle
+pnpm install
+pnpm app         # installers in target/release/bundle
 cargo run        # development
 ```
 
 ## Test
 
 ```sh
-npm run check    # types, linters and tests
-npm test         # only the tests
+pnpm check       # types, linters and tests
+pnpm test        # only the tests
 ```
 
-The pages and the tests are TypeScript, checked by `tsc` and Biome; the Rust is checked by clippy and rustfmt. `npm run fix` applies the formatting.
+The pages and the tests are TypeScript, checked by `tsc` and Biome; the Rust is checked by clippy and rustfmt. `pnpm fix` applies the formatting.
 
 The tests start Lens without its window and drive a headless Chrome whose camera is a test pattern, as both the phone and OBS; then they start the real app. CI runs this on macOS, Windows and Linux.
 

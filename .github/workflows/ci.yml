@@ -17,10 +17,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -30,9 +31,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf xvfb
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run lint
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
       - run: cargo build
       - run: node tests/e2e.ts
       - name: Start the app
