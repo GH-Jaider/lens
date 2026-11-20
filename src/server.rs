@@ -153,7 +153,7 @@ pub async fn start(data_dir: PathBuf, with_obs: bool) -> Result<Started, String>
     });
     tokio::spawn(follow_network(hub.clone(), tls, data_dir, phone_port));
     if with_obs {
-        tokio::spawn(obs::run(hub.ui.clone(), view_url));
+        tokio::spawn(obs::run(hub.ui.clone(), view_url, hub.token[..8].to_string()));
     }
 
     Ok(Started { local_port, phone_port, token, hub })

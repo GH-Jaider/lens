@@ -112,6 +112,16 @@ impl Obs {
         }
     }
 
+    /// Points the source at an address; OBS loads the page when it changes.
+    /// Only OBS going away is a failure: a refusal leaves things as they were.
+    async fn point(&mut self, url: &str) -> Result<(), Fail> {
+        let settings = json!({ "inputName": SOURCE, "inputSettings": { "url": url }, "overlay": true });
+        match self.request("SetInputSettings", settings).await {
+            Err(Fail::Closed) => Err(Fail::Closed),
+            _ => Ok(()),
+        }
+    }
+
     /// Puts the phone in the current scene, filling the canvas, and turns the
     /// virtual camera on. A source the user already has is only re-pointed,
     /// never moved or resized.
@@ -154,7 +164,7 @@ fn answer(password: &str, salt: &str, challenge: &str) -> String {
 }
 
 /// One connection to OBS, for as long as it lasts. Returns why it ended.
-async fn session(ui: &watch::Sender<UiState>, view_url: &str) -> &'static str {
+async fn session(ui: &watch::Sender<UiState>, view_url: &str, launch: &str) -> &'static str {
     let Some(settings) = settings() else { return "off" };
     let Ok((socket, _)) = connect_async(format!("ws://127.0.0.1:{}", settings.port)).await else {
         // OBS shut means off; OBS open with its server unticked looks the same
@@ -181,16 +191,23 @@ async fn session(ui: &watch::Sender<UiState>, view_url: &str) -> &'static str {
 
     let mut changes = ui.subscribe();
     let mut had_phone = false;
-    let mut url = view_url.to_string();
+    // The address carries this launch, so OBS loads the page afresh once per
+    // launch: a page left over from an earlier Lens runs older code and has
+    // been seen to sit there connected but showing nothing.
+    let mut url = format!("{view_url}?s={launch}");
+    let mut pointed = false;
     let mut reloads = 0;
-    let mut pageless: Option<Instant> = None;
+    let mut unwell: Option<Instant> = None;
     loop {
-        let (phone, page) = {
+        let (phone, page, live) = {
             let state = changes.borrow_and_update();
-            (state.phone, state.obs_page)
+            (state.phone, state.obs_page, state.obs_live)
         };
-        if phone && !had_phone && obs.show_phone(&url).await.is_err() {
-            return "off";
+        if phone && !had_phone {
+            if obs.show_phone(&url).await.is_err() {
+                return "off";
+            }
+            pointed = true;
         }
         had_phone = phone;
         let (Ok(source), Ok(vcam)) = (obs.has_source().await, obs.camera_on().await) else { return "off" };
@@ -198,24 +215,31 @@ async fn session(ui: &watch::Sender<UiState>, view_url: &str) -> &'static str {
             state.source = source;
             state.vcam = vcam;
         });
+        if source && !pointed {
+            pointed = true;
+            if obs.point(&url).await.is_err() {
+                return "off";
+            }
+        }
 
-        // OBS has the source but its page is not talking to Lens: OBS was
-        // opened before Lens and is showing an error page that never retries.
-        // Only a different address makes OBS load it again.
-        if source && !page {
-            let since = *pageless.get_or_insert_with(Instant::now);
-            if since.elapsed() > Duration::from_secs(4) && reloads < 3 {
+        // OBS has the source but it is not doing its part: its page is not
+        // talking to Lens (OBS was opened first and shows an error page that
+        // never retries), or it is, and the phone is there, yet no picture
+        // shows. Only a different address makes OBS load the page again.
+        if source && (!page || (phone && !live)) {
+            let patience = Duration::from_secs(if page { 10 } else { 4 });
+            let since = *unwell.get_or_insert_with(Instant::now);
+            if since.elapsed() > patience && reloads < 3 {
                 reloads += 1;
-                pageless = None;
-                url = format!("{view_url}?r={reloads}");
-                let settings = json!({ "inputName": SOURCE, "inputSettings": { "url": url }, "overlay": true });
-                if let Err(Fail::Closed) = obs.request("SetInputSettings", settings).await {
+                unwell = None;
+                url = format!("{view_url}?s={launch}-{reloads}");
+                if obs.point(&url).await.is_err() {
                     return "off";
                 }
             }
         } else {
-            pageless = None;
-            if page {
+            unwell = None;
+            if source {
                 reloads = 0;
             }
         }
@@ -227,9 +251,9 @@ async fn session(ui: &watch::Sender<UiState>, view_url: &str) -> &'static str {
 }
 
 /// Keeps looking for OBS for as long as Lens runs.
-pub async fn run(ui: watch::Sender<UiState>, view_url: String) {
+pub async fn run(ui: watch::Sender<UiState>, view_url: String, launch: String) {
     loop {
-        let ended = session(&ui, &view_url).await;
+        let ended = session(&ui, &view_url, &launch).await;
         update(&ui, |state| {
             state.obs = ended;
             state.source = false;
