@@ -19,39 +19,40 @@
   .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #8b8b95; }
   .status.live::before { background: #4cc38a; }
 
-  .bar {
-    position: fixed; left: 0; right: 0; bottom: calc(22px + env(safe-area-inset-bottom));
-    display: flex; justify-content: center; gap: 18px;
+  /* The camera's controls: a strip that is always there, as on a camera. Each
+     setting shows its value; the one being changed opens just above. */
+  .dock {
+    position: fixed; left: 0; right: 0; bottom: 0; padding-bottom: env(safe-area-inset-bottom);
+    background: rgba(18, 18, 20, 0.86); border-top: 1px solid rgba(255, 255, 255, 0.1);
   }
+  .editor {
+    display: none; align-items: center; justify-content: center; gap: 14px; height: 56px;
+    padding: 0 calc(16px + env(safe-area-inset-right)) 0 calc(16px + env(safe-area-inset-left));
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  body.editing .editor { display: flex; }
+  .editor output { flex: none; width: 64px; text-align: right; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .strip { display: flex; align-items: center; height: 64px; padding-left: calc(12px + env(safe-area-inset-left)); }
   .round {
-    width: 56px; height: 56px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.28);
-    background: rgba(0, 0, 0, 0.6); color: #f4f4f5; display: flex; align-items: center; justify-content: center; padding: 0;
+    flex: none; width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.24);
+    background: transparent; color: #f4f4f5; display: flex; align-items: center; justify-content: center; padding: 0;
   }
-  .round svg { width: 24px; height: 24px; }
+  .round svg { width: 21px; height: 21px; }
   .round:active { opacity: 0.6; }
-
-  /* The camera's controls: a sheet over the lower part of the picture, so the
-     effect of each one shows above it while it is moved. */
-  .sheet {
-    position: fixed; left: 0; right: 0; bottom: 0; max-height: 62%; overflow-y: auto; -webkit-overflow-scrolling: touch;
-    padding: 6px 18px calc(16px + env(safe-area-inset-bottom)); border-radius: 18px 18px 0 0;
-    background: rgba(18, 18, 20, 0.92); border-top: 1px solid rgba(255, 255, 255, 0.1);
-    transform: translateY(102%); transition: transform 0.22s ease;
+  .chips { flex: 1; display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; padding: 0 10px; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip {
+    flex: none; min-width: 70px; height: 48px; padding: 0 10px; border: 0; border-radius: 10px; background: transparent;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font: inherit;
   }
-  body.sheet-on .sheet { transform: none; }
-  body.sheet-on .bar { visibility: hidden; }
-  .sheet header { display: flex; align-items: center; justify-content: space-between; height: 50px; }
-  #sending { font-size: 13px; color: #a3a3ab; font-variant-numeric: tabular-nums; }
-  #done { height: 32px; padding: 0 14px; border-radius: 8px; border: 0; background: #f4f4f5; color: #111113; font: inherit; font-size: 14px; font-weight: 600; }
-  .row { display: grid; grid-template-columns: 104px 1fr 62px; align-items: center; min-height: 50px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
-  .row.wide { grid-template-columns: 104px 1fr; }
-  .row > span:first-child { font-size: 14px; color: #c9c9cf; }
-  .row output { text-align: right; font-size: 13px; color: #a3a3ab; font-variant-numeric: tabular-nums; }
-  .seg { display: flex; justify-self: end; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 8px; overflow: hidden; }
-  .seg button { height: 32px; min-width: 56px; padding: 0 12px; border: 0; border-left: 1px solid rgba(255, 255, 255, 0.16); background: transparent; color: #c9c9cf; font: inherit; font-size: 13px; }
+  .chip span { font-size: 11px; color: #8e8e98; white-space: nowrap; }
+  .chip b { font-size: 14px; font-weight: 600; color: #f4f4f5; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .chip.on { background: rgba(255, 255, 255, 0.13); }
+  .seg { display: flex; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 8px; overflow: hidden; }
+  .seg button { height: 34px; min-width: 64px; padding: 0 14px; border: 0; border-left: 1px solid rgba(255, 255, 255, 0.16); background: transparent; color: #c9c9cf; font: inherit; font-size: 14px; }
   .seg button:first-child { border-left: 0; }
   .seg button.on { background: #f4f4f5; color: #111113; font-weight: 600; }
-  input[type="range"] { width: 100%; margin: 0; accent-color: #f4f4f5; }
+  input[type="range"] { flex: 1; min-width: 0; margin: 0; accent-color: #f4f4f5; }
 
   .notice {
     position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center;
@@ -63,23 +64,20 @@
     font: inherit; font-weight: 600;
   }
   body.notice-on .notice { display: flex; }
-  body.notice-on .bar, body.notice-on .status, body.notice-on .sheet { display: none; }
+  body.notice-on .dock, body.notice-on .status { display: none; }
 </style>
 </head>
 <body>
 <video id="video" autoplay muted playsinline></video>
 <div class="status" id="status"></div>
-<div class="bar">
-  <button class="round" id="flip">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9a8 8 0 0 1 14.5-3.5L20 7"/><path d="M20 3v4h-4"/><path d="M20 15a8 8 0 0 1-14.5 3.5L4 17"/><path d="M4 21v-4h4"/></svg>
-  </button>
-  <button class="round" id="tune">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/></svg>
-  </button>
-</div>
-<div class="sheet">
-  <header><span id="sending"></span><button id="done"></button></header>
-  <div id="controls"></div>
+<div class="dock">
+  <div class="editor" id="editor"></div>
+  <div class="strip">
+    <button class="round" id="flip">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9a8 8 0 0 1 14.5-3.5L20 7"/><path d="M20 3v4h-4"/><path d="M20 15a8 8 0 0 1-14.5 3.5L4 17"/><path d="M4 21v-4h4"/></svg>
+    </button>
+    <div class="chips" id="chips"></div>
+  </div>
 </div>
 <div class="notice"><p id="notice"></p><button id="retry"></button></div>
 <script src="/phone.js"></script>

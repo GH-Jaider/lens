@@ -1,6 +1,6 @@
 // The page the phone opens from the QR code: it sends the camera to every
 // viewer (the OBS source and the preview in the app window).
-import { sending, showControls, type Wanted } from "./controls.ts"
+import { cameraParams, type Param, sending, type Wanted } from "./controls.ts"
 import { $, type PhoneMessage, pick, type Signal } from "./types.ts"
 
 const t = pick({
@@ -14,7 +14,6 @@ const t = pick({
     replaced: "Another phone took over as the camera.",
     retry: "Try again",
     again: "Use this phone",
-    done: "Done",
     controls: {
       resolution: "Resolution",
       fps: "Frames",
@@ -35,6 +34,7 @@ const t = pick({
       distance: "Distance",
       auto: "Auto",
       manual: "Manual",
+      locked: "Locked",
     },
   },
   es: {
@@ -47,7 +47,6 @@ const t = pick({
     replaced: "Otro celular pasó a ser la cámara.",
     retry: "Reintentar",
     again: "Usar este celular",
-    done: "Listo",
     controls: {
       resolution: "Resolución",
       fps: "Cuadros",
@@ -68,6 +67,7 @@ const t = pick({
       distance: "Distancia",
       auto: "Auto",
       manual: "Manual",
+      locked: "Fijo",
     },
   },
 })
@@ -99,10 +99,21 @@ function notice(text: string, button: string) {
   document.body.classList.add("notice-on")
 }
 
+// What is really being sent, beside "Live": size, rate and bitrate.
+const sent = { bytes: 0, at: 0 }
+let figures = ""
+
 function refresh() {
   const live = [...peers.values()].some((peer) => peer.pc.connectionState === "connected")
-  status(live ? t.live : events?.readyState === EventSource.OPEN ? t.connecting : t.lost, live)
+  const text = live ? [t.live, figures].filter(Boolean).join(" · ") : ""
+  status(text || (events?.readyState === EventSource.OPEN ? t.connecting : t.lost), live)
 }
+
+setInterval(async () => {
+  const live = [...peers.values()].find((peer) => peer.pc.connectionState === "connected")
+  figures = live ? await sending(live.pc, sent) : ""
+  refresh()
+}, 1000)
 
 const send = (to: number, data: Signal) =>
   fetch(`/signal?t=${token}&id=${id}`, {
@@ -145,9 +156,47 @@ async function reshape() {
   for (const { pc } of peers.values()) for (const sender of pc.getSenders()) await limit(sender)
 }
 
+// The strip: every setting with its value, always in view. Touching one puts
+// its control just above; touching it again puts it away.
+let params: Param[] = []
+let editing = -1
+
+function paint() {
+  const chips = $("chips").children
+  params.forEach((param, index) => {
+    const chip = chips[index]
+    if (!chip) return
+    chip.classList.toggle("on", index === editing)
+    const value = chip.querySelector("b")
+    if (value) value.textContent = param.value
+  })
+  document.body.classList.toggle("editing", editing >= 0)
+}
+
+function edit(index: number) {
+  editing = index === editing ? -1 : index
+  $("editor").replaceChildren()
+  params[editing]?.open($("editor"), paint)
+  paint()
+}
+
 function controls() {
   const [track] = stream?.getVideoTracks() ?? []
-  if (track) showControls($("controls"), track, wanted, t.controls, reshape)
+  if (!track) return
+  params = cameraParams(track, wanted, t.controls, reshape)
+  editing = -1
+  $("editor").replaceChildren()
+  $("chips").replaceChildren(
+    ...params.map((param, index) => {
+      const chip = document.createElement("button")
+      chip.className = "chip"
+      chip.append(Object.assign(document.createElement("span"), { textContent: param.label }))
+      chip.append(Object.assign(document.createElement("b"), { textContent: param.value }))
+      chip.onclick = () => edit(index)
+      return chip
+    }),
+  )
+  paint()
 }
 
 function drop(viewer: number) {
@@ -254,25 +303,6 @@ async function start() {
   controls()
   stayAwake()
   connect()
-}
-
-// The sheet says what is really being sent while it is open.
-const sent = { bytes: 0, at: 0 }
-let ticking: ReturnType<typeof setInterval> | undefined
-$("done").textContent = t.done
-$("tune").onclick = () => {
-  controls()
-  document.body.classList.add("sheet-on")
-  const tick = async () => {
-    const live = [...peers.values()].find((peer) => peer.pc.connectionState === "connected")
-    $("sending").textContent = live ? await sending(live.pc, sent) : ""
-  }
-  tick()
-  ticking = setInterval(tick, 1000)
-}
-$("done").onclick = () => {
-  document.body.classList.remove("sheet-on")
-  clearInterval(ticking)
 }
 
 $("retry").onclick = start

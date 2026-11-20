@@ -173,30 +173,32 @@ try {
   )
 
   // The camera's controls: Chrome's test camera can change size and rate.
-  await phone.evaluate(`document.getElementById("tune").click()`)
-  const offered = await until(() =>
-    phone.evaluate(`[...document.querySelectorAll("#controls .seg button")].map((b) => b.textContent).join(" ")`),
+  const chips = await until(() =>
+    phone.evaluate(`[...document.querySelectorAll("#chips .chip")].map((c) => c.textContent).join(" | ")`),
   )
-  check(
-    "the phone offers the camera's controls",
-    String(offered).includes("720p") && String(offered).includes("Normal"),
-    String(offered),
+  check("the phone shows the camera's settings and their values", String(chips).includes("1080p"), String(chips))
+  const figures = await until(() =>
+    phone.evaluate(`/\\d+×\\d+ · \\d+ fps/.test(document.getElementById("status").textContent)`),
   )
-  check(
-    "the phone says what it is sending",
-    Boolean(
-      await until(() => phone.evaluate(`/\\d+×\\d+ · \\d+ fps/.test(document.getElementById("sending").textContent)`)),
-    ),
-  )
+  check("the phone says what it is sending", Boolean(figures))
+  await phone.evaluate(`document.querySelector("#chips .chip").click()`)
   await phone.evaluate(
-    `[...document.querySelectorAll("#controls .seg button")].find((b) => b.textContent === "720p").click()`,
+    `[...document.querySelectorAll("#editor .seg button")].find((b) => b.textContent === "720p").click()`,
+  )
+  check(
+    "the strip shows the new value",
+    await phone.evaluate(`document.querySelector("#chips .chip b").textContent === "720p"`),
   )
   // The camera takes a moment to switch, and the viewer a moment more to see it.
   const height = `document.querySelector("video").srcObject.getVideoTracks()[0].getSettings().height`
   check("choosing 720p changes what the camera gives", await until(() => phone.evaluate(`${height} === 720`)))
   const longest = `(() => { const v = document.querySelector("video"); return v.videoWidth > 0 && Math.max(v.videoWidth, v.videoHeight) <= 1280 })()`
   check("the viewer gets the smaller picture", await until(() => viewer.evaluate(longest)))
-  await phone.evaluate(`document.getElementById("done").click()`)
+  await phone.evaluate(`document.querySelector("#chips .chip").click()`)
+  check(
+    "touching the setting again puts its control away",
+    await phone.evaluate(`!document.body.classList.contains("editing")`),
+  )
 
   // The preview can be switched off without OBS losing the picture.
   await app.evaluate(`document.getElementById("eye").click()`)

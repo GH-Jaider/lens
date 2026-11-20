@@ -26,7 +26,7 @@ The video goes straight from the phone to OBS over the local network (WebRTC). L
 
 ### Picture
 
-The phone sends 1080p at 30 frames per second unless told otherwise, and as much of it as the Wi‑Fi carries. The sliders button on the phone opens the camera's controls: resolution, frame rate and quality on every phone, and whatever else that phone's browser can set. Android phones usually offer zoom, light, shutter, ISO, white balance and focus; iPhones offer fewer. The same sheet shows what is really being sent.
+The phone sends 1080p at 30 frames per second unless told otherwise, and as much of it as the Wi‑Fi carries. A strip along the bottom of the phone shows the camera's settings and their values, as a camera does; touch one to change it. Every phone has resolution, frame rate and quality, plus whatever else its browser can set: Android phones usually offer zoom, light, shutter, ISO, white balance and focus, and iPhones offer fewer. Where the browser can only hold a setting still, not choose its value, the choice is Auto or Locked. Beside **Live**, the phone shows what is really being sent.
 
 The eye on the preview in the Lens window turns the preview off; OBS keeps the picture.
 
