@@ -191,17 +191,11 @@ try {
   await phone.evaluate(
     `[...document.querySelectorAll("#controls .seg button")].find((b) => b.textContent === "720p").click()`,
   )
-  const smaller = await until(() =>
-    viewer.evaluate(
-      `(() => { const v = document.querySelector("video"); return Math.max(v.videoWidth, v.videoHeight) <= 1280 && v.videoWidth > 0 })()`,
-    ),
-  )
-  check(
-    "choosing 720p changes what the camera gives",
-    (await phone.evaluate(
-      `document.querySelector("video").srcObject.getVideoTracks()[0].getSettings().height === 720`,
-    )) && Boolean(smaller),
-  )
+  // The camera takes a moment to switch, and the viewer a moment more to see it.
+  const height = `document.querySelector("video").srcObject.getVideoTracks()[0].getSettings().height`
+  check("choosing 720p changes what the camera gives", await until(() => phone.evaluate(`${height} === 720`)))
+  const longest = `(() => { const v = document.querySelector("video"); return v.videoWidth > 0 && Math.max(v.videoWidth, v.videoHeight) <= 1280 })()`
+  check("the viewer gets the smaller picture", await until(() => viewer.evaluate(longest)))
   await phone.evaluate(`document.getElementById("done").click()`)
 
   // The preview can be switched off without OBS losing the picture.
