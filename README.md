@@ -2,6 +2,8 @@
 
 Scan a QR code and your phone becomes a camera in OBS. Nothing to install on the phone.
 
+<img src="docs/window.png" width="368" alt="The Lens window: a QR code to scan and the three steps to follow">
+
 ## Download
 
 Get the installer for your system from the [latest release](https://github.com/GH-Jaider/lens/releases/latest).
