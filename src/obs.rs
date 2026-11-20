@@ -33,7 +33,8 @@ fn settings() -> Option<Settings> {
         std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| home.join("AppData/Roaming")).join(tail)
     } else {
         // An OBS installed from Flathub keeps its settings in its own folder.
-        let usual = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".config")).join(tail);
+        let usual =
+            std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".config")).join(tail);
         let flatpak = home.join(".var/app/com.obsproject.Studio/config").join(tail);
         if !usual.exists() && flatpak.exists() {
             flatpak

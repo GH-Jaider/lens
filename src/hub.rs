@@ -78,7 +78,13 @@ fn send(tx: &Tx, message: Value) {
 
 impl Hub {
     pub fn new(token: String, ui: UiState) -> Self {
-        Self { inner: Mutex::default(), ui: watch::Sender::new(ui), fit: watch::Sender::new((0.0, 0.0)), install: Notify::new(), token }
+        Self {
+            inner: Mutex::default(),
+            ui: watch::Sender::new(ui),
+            fit: watch::Sender::new((0.0, 0.0)),
+            install: Notify::new(),
+            token,
+        }
     }
 
     /// A newly scanned phone takes over from the one before it.
@@ -134,7 +140,13 @@ impl Hub {
     /// Lets go of a phone that went quiet: a sleeping phone keeps its
     /// connection open for minutes, and the window should not call that connected.
     pub fn reap(&self) {
-        let silent = self.inner.lock().unwrap().phone.as_ref().and_then(|(id, _, seen)| (seen.elapsed() > PHONE_SILENCE).then_some(*id));
+        let silent = self
+            .inner
+            .lock()
+            .unwrap()
+            .phone
+            .as_ref()
+            .and_then(|(id, _, seen)| (seen.elapsed() > PHONE_SILENCE).then_some(*id));
         if let Some(id) = silent {
             self.leave(id);
         }
@@ -179,7 +191,7 @@ impl Hub {
         let phone = inner.phone.as_ref();
         let message = json!({ "type": "signal", "from": from, "data": data });
         if from_phone {
-            if !phone.is_some_and(|(id, _, _)| *id == from) {
+            if phone.is_none_or(|(id, _, _)| *id != from) {
                 return false;
             }
             if let Some(viewer) = to.and_then(|id| inner.viewers.get(&id)) {

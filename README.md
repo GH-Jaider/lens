@@ -51,10 +51,13 @@ cargo run        # development
 ## Test
 
 ```sh
-npm test
+npm run check    # types, linters and tests
+npm test         # only the tests
 ```
 
-Starts Lens without its window and drives a headless Chrome whose camera is a test pattern, as both the phone and OBS; then starts the real app. CI runs this on macOS, Windows and Linux.
+The pages and the tests are TypeScript, checked by `tsc` and Biome; the Rust is checked by clippy and rustfmt. `npm run fix` applies the formatting.
+
+The tests start Lens without its window and drive a headless Chrome whose camera is a test pattern, as both the phone and OBS; then they start the real app. CI runs this on macOS, Windows and Linux.
 
 ## Release
 
@@ -69,7 +72,8 @@ Set the same version in `Cargo.toml` and `tauri.conf.json`, then push a tag (`gi
 | `src/obs.rs` | OBS WebSocket client: adds the source, starts the virtual camera |
 | `src/tls.rs` | The self-signed certificate, kept per network address |
 | `src/main.rs` | Window, tray, updates, `--headless` |
-| `web/` | The app window, the phone page and the page OBS loads |
+| `web/` | The app window, the phone page and the page OBS loads; their TypeScript is in `web/src` |
+| `tests/` | End to end, with a headless Chrome as the phone and as OBS |
 
 ## License
 

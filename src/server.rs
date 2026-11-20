@@ -116,10 +116,8 @@ pub async fn start(data_dir: PathBuf, with_obs: bool) -> Result<Started, String>
 
     let token = random_token();
     let view_url = format!("http://127.0.0.1:{local_port}/view");
-    let hub = Arc::new(Hub::new(
-        token.clone(),
-        UiState { view_url: view_url.clone(), obs: "off", ..UiState::default() },
-    ));
+    let hub =
+        Arc::new(Hub::new(token.clone(), UiState { view_url: view_url.clone(), obs: "off", ..UiState::default() }));
 
     let (cert, key) = tls::cert_for(&data_dir, IpAddr::V4(Ipv4Addr::LOCALHOST))?;
     let tls = RustlsConfig::from_pem(cert, key).await.map_err(|error| error.to_string())?;
@@ -127,7 +125,8 @@ pub async fn start(data_dir: PathBuf, with_obs: bool) -> Result<Started, String>
     let local_app = Router::new()
         .route("/", get(|| async { Html(include_str!("../web/index.html")) }))
         .route("/view", get(|| async { Html(include_str!("../web/view.html")) }))
-        .route("/viewer.js", get(viewer_js))
+        .route("/app.js", get(|| async { script(include_str!("../web/dist/app.js")) }))
+        .route("/view.js", get(|| async { script(include_str!("../web/dist/view.js")) }))
         .route("/state", get(state))
         .route("/events", get(events))
         .route("/signal", post(signal))
@@ -138,6 +137,7 @@ pub async fn start(data_dir: PathBuf, with_obs: bool) -> Result<Started, String>
         .with_state(Ctx { hub: hub.clone(), phone_side: false });
     let phone_app = Router::new()
         .route("/", get(|| async { Html(include_str!("../web/phone.html")) }))
+        .route("/phone.js", get(|| async { script(include_str!("../web/dist/phone.js")) }))
         .route("/events", get(events))
         .route("/signal", post(signal))
         .route("/ping", post(ping))
@@ -197,8 +197,9 @@ async fn local_only(request: Request, next: Next) -> Response {
     }
 }
 
-async fn viewer_js() -> impl IntoResponse {
-    ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../web/viewer.js"))
+/// The pages' scripts are written in TypeScript (web/src) and built by build.rs.
+fn script(source: &'static str) -> impl IntoResponse {
+    ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], source)
 }
 
 fn stream_of<S>(stream: S) -> Sse<impl Stream<Item = Result<Event, Infallible>>>

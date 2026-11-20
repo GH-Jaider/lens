@@ -82,14 +82,13 @@ fn add_tray(app: &tauri::App) -> tauri::Result<()> {
     let (open, quit) = if spanish() { ("Abrir Lens", "Salir de Lens") } else { ("Open Lens", "Quit Lens") };
     let open = MenuItem::with_id(app, "open", open, true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", quit, true, None::<&str>)?;
-    let tray = TrayIconBuilder::new()
-        .tooltip("Lens")
-        .menu(&Menu::with_items(app, &[&open, &quit])?)
-        .on_menu_event(|app, event| match event.id.as_ref() {
+    let tray = TrayIconBuilder::new().tooltip("Lens").menu(&Menu::with_items(app, &[&open, &quit])?).on_menu_event(
+        |app, event| match event.id.as_ref() {
             "open" => open_window(app),
             "quit" => app.exit(0),
             _ => {}
-        });
+        },
+    );
 
     // The Mac menu bar tints a plain mark itself; a Windows or Linux tray
     // shows the icon as it is, and there a click is expected to open the app.
