@@ -139,7 +139,6 @@ async function startChrome(chrome: string): Promise<(url: string) => Promise<Pag
   }
 }
 
-const resolution = `[...document.querySelectorAll("#chips .chip")].find((chip) => chip.textContent.startsWith("Resolution"))`
 const picture = `(() => { const v = document.querySelector("video"); return v.videoWidth > 0 && v.currentTime > 0 ? v.videoWidth + "x" + v.videoHeight : "" })()`
 
 try {
@@ -181,84 +180,96 @@ try {
     await until(() => phone.evaluate(`document.getElementById("status").classList.contains("live")`)),
   )
 
-  // The camera's controls: Chrome's test camera can change size and rate.
+  // The camera's settings: a strip of values, and a dial for the one chosen.
+  // The page is driven as a finger would: the dial is turned to a place.
+  const chip = (name: string) =>
+    `[...document.querySelectorAll("#chips .chip")].find((chip) => chip.textContent.startsWith("${name}"))`
+  const value = (name: string) => phone.evaluate(`${chip(name)}?.querySelector("b").textContent`)
+  const choose = async (name: string) => {
+    await phone.evaluate(`${chip(name)}.click()`)
+    await delay(1300)
+  }
+  const turn = async (to: string) => {
+    await phone.evaluate(
+      `(() => { const dial = document.querySelector("#editor .dial"); dial.scrollLeft = ${to}; dial.dispatchEvent(new Event("scroll")) })()`,
+    )
+    await delay(1300)
+  }
+  const stop = (text: string) =>
+    `[...document.querySelectorAll("#editor .stop")].findIndex((stop) => stop.textContent === "${text}") * 88`
+
   const chips = await until(() =>
     phone.evaluate(`[...document.querySelectorAll("#chips .chip")].map((c) => c.textContent).join(" | ")`),
   )
-  check("the phone shows the camera's settings and their values", String(chips).includes("1080p"), String(chips))
+  check("the phone shows the camera's settings and their values", String(chips).includes("Res1080p"), String(chips))
   const figures = await until(() =>
-    phone.evaluate(`/\\d+×\\d+ · \\d+ fps/.test(document.getElementById("status").textContent)`),
+    phone.evaluate(`/\\d+×\\d+ · \\d+ fps/.test(document.getElementById("figures").textContent)`),
   )
   check("the phone says what it is sending", Boolean(figures))
-  await phone.evaluate(`${resolution}.click()`)
-  await phone.evaluate(
-    `[...document.querySelectorAll("#editor .seg button")].find((b) => b.textContent === "720p").click()`,
-  )
-  check(
-    "the strip shows the new value",
-    await phone.evaluate(`${resolution}.querySelector("b").textContent === "720p"`),
-  )
+
+  await choose("Res")
+  await turn(stop("720p"))
+  check("turning the dial to 720p shows in the strip", (await value("Res")) === "720p")
   // The camera takes a moment to switch, and the viewer a moment more to see it.
   const height = `document.querySelector("video").srcObject.getVideoTracks()[0].getSettings().height`
   check("choosing 720p changes what the camera gives", await until(() => phone.evaluate(`${height} === 720`)))
   const longest = `(() => { const v = document.querySelector("video"); return v.videoWidth > 0 && Math.max(v.videoWidth, v.videoHeight) <= 1280 })()`
   check("the viewer gets the smaller picture", await until(() => viewer.evaluate(longest)))
-  await phone.evaluate(`${resolution}.click()`)
+  await phone.evaluate(`${chip("Res")}.click()`)
   check(
-    "touching the setting again puts its control away",
+    "touching the setting again puts its dial away",
     await phone.evaluate(`!document.body.classList.contains("editing")`),
   )
 
   // A phone has several cameras; the strip's first setting picks one by name.
-  const cameras = `(async () => {
-    const chip = document.querySelector("#chips .chip")
-    if (!chip.textContent.startsWith("Camera")) return "no camera setting: " + chip.textContent
-    const track = () => document.querySelector("video").srcObject.getVideoTracks()[0]
-    const before = track().getSettings().deviceId
-    chip.click()
-    const buttons = [...document.querySelectorAll("#editor .seg button")]
-    buttons.find((button) => !button.classList.contains("on")).click()
-    await new Promise((done) => setTimeout(done, 2500))
-    const after = track().getSettings().deviceId
-    return buttons.length + " cameras, " + (after !== before && track().readyState === "live" ? "switched" : "did not switch")
-  })()`
-  check(
-    "the phone lists its cameras and switches to the one chosen",
-    (await phone.evaluate(cameras)) === "3 cameras, switched",
+  const device = `document.querySelector("video").srcObject.getVideoTracks()[0].getSettings().deviceId`
+  const first = await phone.evaluate(device)
+  await choose("Lens")
+  const lenses = await phone.evaluate(
+    `[...document.querySelectorAll("#editor .stop")].map((s) => s.textContent).join(", ")`,
   )
-  const still = await viewer.evaluate(`document.querySelector("video").currentTime`)
+  check("the phone lists its cameras by plain names", lenses === "Back, Back 2, Back 3", String(lenses))
+  await turn("88")
+  check(
+    "turning to another camera opens it",
+    await until(() => phone.evaluate(`${device} !== ${JSON.stringify(first)}`)),
+  )
+  const still = Number(await viewer.evaluate(`document.querySelector("video").currentTime`))
   await delay(1000)
   check(
     "the picture goes on from the other camera",
-    Number(await viewer.evaluate(`document.querySelector("video").currentTime`)) > Number(still),
+    Number(await viewer.evaluate(`document.querySelector("video").currentTime`)) > still,
   )
-
+  check("the size chosen before is kept on the new camera", await until(() => phone.evaluate(`${height} === 720`)))
   // Back to the first camera: Chrome's other test cameras deliver frames in
   // unusual formats, and the checks that follow are not about that.
-  await phone.evaluate(`document.querySelector("#chips .chip").click()`)
-  await phone.evaluate(`document.querySelector("#editor .seg button").click()`)
-  await delay(2500)
+  await choose("Lens")
+  await turn("0")
   check("the phone goes back to the first camera", Boolean(await until(() => viewer.evaluate(picture))))
 
-  // Chrome's test camera has a shutter: moving it makes exposure manual, and
-  // the exposure setting has to say so when it is opened afterwards.
-  const manual = `(() => {
-    const chips = [...document.querySelectorAll("#chips .chip")]
-    const named = (word) => chips.find((chip) => chip.textContent.startsWith(word))
-    const exposure = named("Exposure")
-    if (!exposure || !named("Shutter")) return "no shutter here"
-    exposure.click()
-    document.querySelector("#editor .seg button").click()
-    named("Shutter").click()
-    const slider = document.querySelector("#editor input")
-    slider.value = slider.min
-    slider.dispatchEvent(new Event("input"))
-    exposure.click()
-    return document.querySelector("#editor .seg button.on").textContent + " / " + exposure.querySelector("b").textContent
-  })()`
-  const exposure = String(await phone.evaluate(manual))
-  check("moving the shutter makes exposure manual", ["Manual / Manual", "no shutter here"].includes(exposure), exposure)
-  await phone.evaluate(`document.querySelector("#chips .chip.on")?.click()`)
+  // Chrome's test camera has a shutter. Auto hands exposure to the camera;
+  // turning the dial takes it back.
+  if (await value("Shutter")) {
+    await choose("Shutter")
+    await phone.evaluate(`document.querySelector("#editor .auto").click()`)
+    check("Auto hands the shutter to the camera", (await value("Shutter")) === "Auto")
+    await turn("360")
+    const byHand = await phone.evaluate(`!document.querySelector("#editor .auto").classList.contains("on")`)
+    check(
+      "turning the dial takes it back",
+      byHand && (await value("Shutter")) !== "Auto",
+      String(await value("Shutter")),
+    )
+    check(
+      "the camera is set to what the dial says",
+      await until(() =>
+        phone.evaluate(
+          `document.querySelector("video").srcObject.getVideoTracks()[0].getSettings().exposureMode === "manual"`,
+        ),
+      ),
+    )
+    await phone.evaluate(`${chip("Shutter")}.click()`)
+  }
 
   // Nothing in the strip is ever left half outside the screen.
   const inside = `(() => {
@@ -273,6 +284,31 @@ try {
     }, 800))
   })()`
   check("a setting at the end of the strip comes fully into view", await phone.evaluate(inside))
+
+  // Leaving the page and coming back: the phone takes the camera away and the
+  // line to the computer goes stale. The page has to pick both up by itself.
+  await phone.evaluate(`(() => {
+    Object.defineProperty(document, "hidden", { value: true, configurable: true })
+    document.dispatchEvent(new Event("visibilitychange"))
+    for (const track of document.querySelector("video").srcObject.getTracks()) track.stop()
+  })()`)
+  await delay(4000)
+  await phone.evaluate(`(() => {
+    Object.defineProperty(document, "hidden", { value: false, configurable: true })
+    document.dispatchEvent(new Event("visibilitychange"))
+  })()`)
+  const back = await until(() =>
+    phone.evaluate(
+      `document.getElementById("status").classList.contains("live") && document.querySelector("video").srcObject.getVideoTracks()[0].readyState === "live"`,
+    ),
+  )
+  check("coming back to the page reconnects by itself", back)
+  const resumed = Number(await viewer.evaluate(`document.querySelector("video").currentTime`))
+  await delay(1500)
+  check(
+    "and OBS has the picture again",
+    Number(await viewer.evaluate(`document.querySelector("video").currentTime`)) > resumed,
+  )
 
   // The preview can be switched off without OBS losing the picture.
   await app.evaluate(`document.getElementById("eye").click()`)

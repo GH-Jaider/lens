@@ -28,9 +28,15 @@ The video goes straight from the phone to OBS over the local network (WebRTC). L
 
 ### Picture
 
-The phone sends 1080p at 30 frames per second unless told otherwise, and as much of it as the Wi‑Fi carries. A strip along the bottom of the phone shows the camera's settings and their values, as a camera does; touch one to change it. The first setting picks which of the phone's cameras to use (front, back, wide, telephoto: whichever the phone lets a page use); the round button beside it just turns the phone around. Every phone has resolution, frame rate and quality, plus whatever else its browser can set: Android phones usually offer zoom, light, shutter, ISO, white balance and focus, and iPhones offer fewer. Where the browser can only hold a setting still, not choose its value, the choice is Auto or Locked. Beside **Live**, the phone shows what is really being sent.
+The phone sends 1080p at 30 frames per second unless told otherwise, and as much of it as the Wi‑Fi carries. The top of the phone's screen says what is really being sent.
 
-The eye on the preview in the Lens window turns the preview off; OBS keeps the picture.
+Along the bottom is a strip with the camera's settings and their values, as on a camera. Touch one and its dial opens above: the scale slides under a fixed needle, so the thumb never covers the value. Settings the camera can also look after by itself have an **Auto** button; turning the dial takes over by hand.
+
+- **Lens** picks one of the phone's cameras by name. The cameras a phone makes up by combining its real ones ("Dual", "Triple") are left out; Android does not name its cameras, so there they are numbered.
+- **Res**, **FPS** and **Bitrate** are on every phone.
+- **Zoom**, **EV**, **Shutter**, **ISO**, **WB**, **Focus** and **Light** appear when the phone's browser can set them. Android phones usually offer most; iPhones offer few.
+
+Leaving the page and coming back reconnects by itself. The eye on the preview in the Lens window turns the preview off; OBS keeps the picture.
 
 ### OBS
 

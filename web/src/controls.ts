@@ -1,7 +1,7 @@
-// The camera's controls on the phone page: a strip that is always in view,
-// like a camera's, with one value per setting. A phone only shows the ones its
-// browser can really set: an Android phone offers shutter, ISO, focus and
-// white balance; an iPhone offers far fewer.
+// What the phone's camera lets its page set, as the settings of the strip.
+// A phone only gets the ones its browser can really set: an Android phone
+// offers shutter, ISO, focus and white balance; an iPhone offers far fewer.
+// A setting whose value the page cannot choose is left out altogether.
 
 /** The settings beyond the standard ones, as browsers that have them report them. */
 interface Range {
@@ -46,115 +46,70 @@ export interface Wanted {
 export interface Texts {
   resolution: string
   fps: string
-  quality: string
-  normal: string
-  high: string
+  bitrate: string
   zoom: string
   light: string
   on: string
   off: string
-  exposure: string
+  ev: string
   shutter: string
   iso: string
-  brightness: string
-  white: string
-  temperature: string
+  wb: string
   focus: string
-  distance: string
   auto: string
-  manual: string
-  locked: string
 }
 
-function element<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text = ""): HTMLElementTagNameMap[K] {
-  const made = document.createElement(tag)
-  if (className) made.className = className
-  if (text) made.textContent = text
-  return made
+/** A setting the camera can also look after by itself. */
+export interface Auto {
+  on: boolean
+  set(on: boolean): void
 }
 
-/**
- * One thing about the camera that can be set. The strip shows its name and
- * value at all times; `open` puts its control (buttons or a slider) in place.
- */
-export interface Param {
+interface Base {
   label: string
-  value: string
-  open(into: HTMLElement, changed: () => void): void
+  /** As the strip shows it. */
+  readonly value: string
+  auto?: Auto
 }
-
-/** A setting with a few options, which other code may also set. */
-export interface Chosen<T> extends Param {
-  choose(value: T): void
+/** One of a few named options. */
+export interface Choice extends Base {
+  kind: "choice"
+  stops: string[]
+  at: number
+  pick(index: number): void
 }
+/** Anywhere along a range; `at` runs from 0 to 1. */
+export interface Scale extends Base {
+  kind: "scale"
+  at: number
+  move(at: number): void
+}
+export type Param = Choice | Scale
 
-/**
- * A few options, one of them chosen. `brief` gives the strip a shorter name
- * than the button has, for options whose full name would not fit there.
- */
+/** `brief` gives the strip a shorter name than the dial has room for. */
 export function choice<T>(
   label: string,
   options: [text: string, value: T][],
   current: T,
   pick: (value: T) => void,
   brief: (text: string) => string = (text) => text,
-): Chosen<T> {
-  let chosen = current
-  const param: Chosen<T> = {
-    // For when something else decides: moving a shutter time makes exposure manual.
-    choose(value) {
-      chosen = value
-      param.value = brief(options.find(([, other]) => other === value)?.[0] ?? "")
-    },
+): Choice {
+  const param: Choice = {
+    kind: "choice",
     label,
-    value: brief(options.find(([, value]) => value === current)?.[0] ?? ""),
-    open(into, changed) {
-      const buttons = element("div", "seg")
-      for (const [text, value] of options) {
-        const button = element("button", value === chosen ? "on" : "", text)
-        button.onclick = () => {
-          for (const other of buttons.children) other.classList.toggle("on", other === button)
-          chosen = value
-          param.value = brief(text)
-          pick(value)
-          changed()
-        }
-        buttons.append(button)
-      }
-      into.append(buttons)
+    stops: options.map(([text]) => text),
+    at: Math.max(
+      0,
+      options.findIndex(([, value]) => value === current),
+    ),
+    get value() {
+      return brief(param.stops[param.at] ?? "")
     },
-  }
-  return param
-}
-
-/** A value along a range. */
-function slider(
-  label: string,
-  range: Range,
-  current: number,
-  show: (value: number) => string,
-  move: (value: number) => void,
-): Param {
-  let at = current
-  const param: Param = {
-    label,
-    value: show(current),
-    open(into, changed) {
-      const input = element("input")
-      input.type = "range"
-      input.min = String(range.min)
-      input.max = String(range.max)
-      input.step = String(range.step || (range.max - range.min) / 100)
-      input.value = String(at)
-      const output = element("output", "", param.value)
-      input.oninput = () => {
-        at = input.valueAsNumber
-        param.value = show(at)
-        output.textContent = param.value
-        move(at)
-        changed()
-      }
-      into.append(input, output)
+    pick(index) {
+      const option = options[index]
+      if (!option || index === param.at) return
+      param.at = index
+      pick(option[1])
     },
   }
   return param
@@ -165,23 +120,84 @@ const usable = (range: Range | undefined): range is Range => Boolean(range && ra
 /** Exposure time comes in units of 100 microseconds; photographers read 1/250. */
 function shutterSpeed(units: number): string {
   const seconds = units / 10_000
-  return seconds >= 1 ? `${seconds.toFixed(1)} s` : `1/${Math.round(1 / seconds)}`
+  return seconds >= 1 ? `${seconds.toFixed(1)}s` : `1/${Math.round(1 / seconds)}`
 }
 
 /**
  * Everything this camera lets its page set, in the order of the strip.
- * `resize` is called when the picture's size, rate or quality is chosen, since
- * those also concern the connection; the rest is set on the camera here.
+ * `basic` is the size and rate asked of the camera, which every change sends
+ * along: a browser takes each request as the whole of what is wanted, so one
+ * that left them out would let the camera fall back to its own size.
+ * `rate` is called when the bitrate is chosen, which concerns the connection.
  */
-export function cameraParams(track: MediaStreamTrack, wanted: Wanted, t: Texts, resize: () => void): Param[] {
+export function cameraParams(
+  track: MediaStreamTrack,
+  wanted: Wanted,
+  t: Texts,
+  basic: () => MediaTrackConstraints,
+  rate: () => void,
+): Param[] {
   const can: Capabilities = track.getCapabilities?.() ?? {}
   const now: Settings = track.getSettings()
-  // Several settings moved quickly are sent one after the other, never at once.
-  let busy: Promise<void> = Promise.resolve()
-  const set = (extra: Extra) => {
-    busy = busy.then(() => track.applyConstraints({ advanced: [extra as MediaTrackConstraintSet] })).catch(() => {})
-  }
   const params: Param[] = []
+
+  // Each group is asked for separately: a browser that cannot honour one part
+  // of a group drops that whole group, and must not drop the others with it.
+  const extras = new Map<string, Extra>()
+  let running = false
+  let again = false
+  async function apply() {
+    if (running) {
+      again = true
+      return
+    }
+    running = true
+    do {
+      again = false
+      const advanced = [...extras.values()] as MediaTrackConstraintSet[]
+      await track.applyConstraints({ ...basic(), advanced }).catch(() => {})
+    } while (again)
+    running = false
+  }
+  const set = (group: string, extra: Extra) => {
+    extras.set(group, extra)
+    apply()
+  }
+
+  /** A value along a range, on a straight or (for values that span decades) a logarithmic scale. */
+  const scale = (
+    label: string,
+    range: Range,
+    current: number,
+    show: (value: number) => string,
+    move: (value: number) => void,
+    options: { log?: boolean; auto?: Auto } = {},
+  ): Scale => {
+    const log = Boolean(options.log) && range.min > 0
+    const span = log ? Math.log(range.max / range.min) : range.max - range.min
+    const toAt = (value: number) => (log ? Math.log(value / range.min) : value - range.min) / span
+    const fromAt = (at: number) => {
+      const value = log ? range.min * Math.exp(at * span) : range.min + at * span
+      const stepped = range.step ? Math.round(value / range.step) * range.step : value
+      return Math.min(range.max, Math.max(range.min, stepped))
+    }
+    let value = Math.min(range.max, Math.max(range.min, current))
+    const param: Scale = {
+      kind: "scale",
+      label,
+      auto: options.auto,
+      at: toAt(value),
+      get value() {
+        return options.auto?.on ? t.auto : show(value)
+      },
+      move(at) {
+        param.at = Math.min(1, Math.max(0, at))
+        value = fromAt(param.at)
+        move(value)
+      },
+    }
+    return param
+  }
 
   // A phone held upright reports its long side as the height.
   const longest = Math.max(can.width?.max ?? 1920, can.height?.max ?? 1080)
@@ -191,7 +207,7 @@ export function cameraParams(track: MediaStreamTrack, wanted: Wanted, t: Texts, 
     params.push(
       choice(t.resolution, options, wanted.height, (height) => {
         wanted.height = height
-        resize()
+        apply()
       }),
     )
   }
@@ -201,100 +217,126 @@ export function cameraParams(track: MediaStreamTrack, wanted: Wanted, t: Texts, 
     params.push(
       choice(t.fps, options, wanted.fps, (fps) => {
         wanted.fps = fps
-        resize()
+        apply()
       }),
     )
   }
-  const qualities: [string, number][] = [
-    [t.normal, 8],
-    [t.high, 25],
-  ]
+  const bitrates = [4, 8, 16, 25].map((mbps): [string, number] => [`${mbps} Mb`, mbps])
   params.push(
-    choice(t.quality, qualities, wanted.mbps, (mbps) => {
+    choice(t.bitrate, bitrates, wanted.mbps, (mbps) => {
       wanted.mbps = mbps
-      resize()
+      rate()
     }),
   )
 
   if (usable(can.zoom)) {
     const show = (zoom: number) => `${zoom.toFixed(1)}×`
-    params.push(slider(t.zoom, can.zoom, now.zoom ?? can.zoom.min, show, (zoom) => set({ zoom })))
+    params.push(scale(t.zoom, can.zoom, now.zoom ?? can.zoom.min, show, (zoom) => set("zoom", { zoom })))
+  }
+  if (usable(can.exposureCompensation)) {
+    const show = (stops: number) => `${stops > 0 ? "+" : ""}${stops.toFixed(1)}`
+    const range = can.exposureCompensation
+    params.push(
+      scale(t.ev, range, now.exposureCompensation ?? 0, show, (exposureCompensation) =>
+        set("ev", { exposureCompensation }),
+      ),
+    )
+  }
+
+  // Automatic or by hand. Only for cameras where the page can choose the value
+  // itself: moving it switches to "by hand", and Auto hands it back.
+  type Mode = "exposureMode" | "whiteBalanceMode" | "focusMode"
+  const mode = (group: string, key: Mode, list: string[] | undefined, chosen: Extra): Auto | undefined => {
+    if (!list?.includes("manual") || !list.includes("continuous")) return undefined
+    const auto: Auto = {
+      on: now[key] !== "manual",
+      set(on) {
+        auto.on = on
+        set(group, on ? { [key]: "continuous" } : { [key]: "manual", ...chosen })
+      },
+    }
+    return auto
+  }
+
+  // Shutter and ISO are one decision: either the camera exposes, or both are set.
+  const exposed: Extra = {}
+  const exposure = mode("exposure", "exposureMode", can.exposureMode, exposed)
+  if (exposure && usable(can.exposureTime)) {
+    const range = can.exposureTime
+    params.push(
+      scale(
+        t.shutter,
+        range,
+        now.exposureTime ?? range.min,
+        shutterSpeed,
+        (exposureTime) => {
+          exposed.exposureTime = exposureTime
+          exposure.set(false)
+        },
+        { log: true, auto: exposure },
+      ),
+    )
+  }
+  if (exposure && usable(can.iso)) {
+    const show = (iso: number) => String(Math.round(iso))
+    params.push(
+      scale(
+        t.iso,
+        can.iso,
+        now.iso ?? can.iso.min,
+        show,
+        (iso) => {
+          exposed.iso = iso
+          exposure.set(false)
+        },
+        { log: true, auto: exposure },
+      ),
+    )
+  }
+  const tint: Extra = {}
+  const white = mode("white", "whiteBalanceMode", can.whiteBalanceMode, tint)
+  if (white && usable(can.colorTemperature)) {
+    const range = can.colorTemperature
+    const show = (kelvin: number) => `${Math.round(kelvin / 50) * 50}K`
+    params.push(
+      scale(
+        t.wb,
+        range,
+        now.colorTemperature ?? (range.min + range.max) / 2,
+        show,
+        (colorTemperature) => {
+          tint.colorTemperature = colorTemperature
+          white.set(false)
+        },
+        { auto: white },
+      ),
+    )
+  }
+  const depth: Extra = {}
+  const focus = mode("focus", "focusMode", can.focusMode, depth)
+  if (focus && usable(can.focusDistance)) {
+    const range = can.focusDistance
+    const show = (metres: number) => (metres >= 10 ? `${Math.round(metres)}m` : `${metres.toFixed(2)}m`)
+    params.push(
+      scale(
+        t.focus,
+        range,
+        now.focusDistance ?? range.min,
+        show,
+        (focusDistance) => {
+          depth.focusDistance = focusDistance
+          focus.set(false)
+        },
+        { log: true, auto: focus },
+      ),
+    )
   }
   if (can.torch) {
     const options: [string, boolean][] = [
       [t.off, false],
       [t.on, true],
     ]
-    params.push(choice(t.light, options, Boolean(now.torch), (torch) => set({ torch })))
-  }
-  if (usable(can.exposureCompensation)) {
-    const show = (stops: number) => `${stops > 0 ? "+" : ""}${stops.toFixed(1)}`
-    const range = can.exposureCompensation
-    params.push(
-      slider(t.brightness, range, now.exposureCompensation ?? 0, show, (exposureCompensation) =>
-        set({ exposureCompensation }),
-      ),
-    )
-  }
-
-  // Automatic, or held still. A camera whose page can also set the value
-  // itself (a shutter time, a temperature) calls the second "Manual", and
-  // moving that value switches to it. One that cannot only offers to lock what
-  // the camera chose, which shows as nothing changing: that is the point.
-  type Mode = "exposureMode" | "whiteBalanceMode" | "focusMode"
-  const mode = (label: string, key: Mode, list: string[] | undefined, settable: boolean): Chosen<string> | null => {
-    if (!list?.includes("manual") || !list.includes("continuous")) return null
-    const options: [string, string][] = [
-      [t.auto, "continuous"],
-      [settable ? t.manual : t.locked, "manual"],
-    ]
-    const param = choice(label, options, now[key] === "manual" ? "manual" : "continuous", (value) =>
-      set({ [key]: value }),
-    )
-    params.push(param)
-    return param
-  }
-
-  const exposure = mode(t.exposure, "exposureMode", can.exposureMode, usable(can.exposureTime) || usable(can.iso))
-  if (exposure && usable(can.exposureTime)) {
-    const range = can.exposureTime
-    params.push(
-      slider(t.shutter, range, now.exposureTime ?? range.min, shutterSpeed, (exposureTime) => {
-        exposure.choose("manual")
-        set({ exposureMode: "manual", exposureTime })
-      }),
-    )
-  }
-  if (exposure && usable(can.iso)) {
-    const show = (iso: number) => String(Math.round(iso))
-    params.push(
-      slider(t.iso, can.iso, now.iso ?? can.iso.min, show, (iso) => {
-        exposure.choose("manual")
-        set({ exposureMode: "manual", iso })
-      }),
-    )
-  }
-  const white = mode(t.white, "whiteBalanceMode", can.whiteBalanceMode, usable(can.colorTemperature))
-  if (white && usable(can.colorTemperature)) {
-    const range = can.colorTemperature
-    const show = (kelvin: number) => `${Math.round(kelvin)} K`
-    params.push(
-      slider(t.temperature, range, now.colorTemperature ?? range.min, show, (colorTemperature) => {
-        white.choose("manual")
-        set({ whiteBalanceMode: "manual", colorTemperature })
-      }),
-    )
-  }
-  const focus = mode(t.focus, "focusMode", can.focusMode, usable(can.focusDistance))
-  if (focus && usable(can.focusDistance)) {
-    const range = can.focusDistance
-    const show = (metres: number) => `${metres.toFixed(1)} m`
-    params.push(
-      slider(t.distance, range, now.focusDistance ?? range.min, show, (focusDistance) => {
-        focus.choose("manual")
-        set({ focusMode: "manual", focusDistance })
-      }),
-    )
+    params.push(choice(t.light, options, Boolean(now.torch), (torch) => set("torch", { torch })))
   }
   return params
 }
@@ -314,7 +356,8 @@ export async function sending(pc: RTCPeerConnection, before: { bytes: number; at
     before.bytes = bytes
     before.at = sent.timestamp
     if (!sent.frameWidth || !sent.frameHeight) return ""
-    return `${sent.frameWidth}×${sent.frameHeight} · ${Math.round(sent.framesPerSecond ?? 0)} fps · ${mbps.toFixed(1)} Mbps`
+    const fps = Math.round(sent.framesPerSecond ?? 0)
+    return `${sent.frameWidth}×${sent.frameHeight} · ${fps} fps · ${mbps.toFixed(1)} Mbps`
   }
   return ""
 }

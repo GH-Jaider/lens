@@ -6,84 +6,86 @@
 <meta name="theme-color" content="#000000">
 <title>Lens</title>
 <style>
+  :root { --ink: #f4f4f5; --soft: #a0a0aa; --faint: #6a6a74; --rule: rgba(255, 255, 255, 0.1); --panel: rgba(12, 12, 14, 0.88); --mark: #f5c84c; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; height: 100%; background: #000; color: #f4f4f5; overflow: hidden; }
+  html, body { margin: 0; height: 100%; background: #000; color: var(--ink); overflow: hidden; }
   body { font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif; -webkit-font-smoothing: antialiased; user-select: none; -webkit-user-select: none; }
+  button { font: inherit; color: inherit; }
   video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 
-  .status {
-    position: fixed; top: calc(14px + env(safe-area-inset-top)); left: calc(14px + env(safe-area-inset-left));
-    display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-radius: 15px;
-    background: rgba(0, 0, 0, 0.6); font-size: 13px; font-weight: 500;
+  /* Along the top: whether it is live, and what is really being sent. */
+  .top {
+    position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between;
+    height: calc(38px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) calc(16px + env(safe-area-inset-right)) 0 calc(16px + env(safe-area-inset-left));
+    background: var(--panel); border-bottom: 1px solid var(--rule);
+    font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; font-variant-numeric: tabular-nums;
   }
-  .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #8b8b95; }
-  .status.live::before { background: #4cc38a; }
+  #status { display: flex; align-items: center; gap: 8px; color: var(--soft); }
+  #status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+  #status.live { color: var(--ink); }
+  #status.live::before { background: #ff453a; }
+  #figures { color: var(--soft); text-transform: none; letter-spacing: 0.02em; }
 
-  /* The camera's controls: a strip that is always there, as on a camera. Each
-     setting shows its value; the one being changed opens just above. */
-  .dock {
-    position: fixed; left: 0; right: 0; bottom: 0; padding-bottom: env(safe-area-inset-bottom);
-    background: rgba(18, 18, 20, 0.86); border-top: 1px solid rgba(255, 255, 255, 0.1);
-  }
+  /* Along the bottom: the camera's settings, as on a camera. Each shows its
+     value; the one being changed opens its dial just above. */
+  .dock { position: fixed; left: 0; right: 0; bottom: 0; padding-bottom: env(safe-area-inset-bottom); background: var(--panel); border-top: 1px solid var(--rule); }
   .editor {
-    display: none; align-items: center; justify-content: center; gap: 14px; height: 56px;
-    padding: 0 calc(16px + env(safe-area-inset-right)) 0 calc(16px + env(safe-area-inset-left));
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    display: none; align-items: center; gap: 12px; height: 84px; border-bottom: 1px solid var(--rule);
+    padding: 0 calc(14px + env(safe-area-inset-right)) 0 calc(14px + env(safe-area-inset-left));
   }
   body.editing .editor { display: flex; }
-  .editor output { flex: none; width: 64px; text-align: right; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .strip { display: flex; align-items: center; height: 64px; padding-left: calc(12px + env(safe-area-inset-left)); position: relative; }
-  /* A small mark on the side where more settings wait. */
-  .strip::before, .strip::after {
-    position: absolute; top: 0; height: 64px; width: 8px; display: none; align-items: center; justify-content: center;
-    color: #8e8e98; font-size: 15px;
+
+  /* The dial: the scale slides, the needle stays. */
+  .dialwrap { position: relative; flex: 1; min-width: 0; height: 84px; display: flex; flex-direction: column; justify-content: flex-end; }
+  .readout { position: absolute; top: 9px; left: 0; right: 0; text-align: center; font-size: 19px; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; color: var(--mark); pointer-events: none; }
+  .dial { display: flex; align-items: flex-end; height: 44px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .dial::-webkit-scrollbar { display: none; }
+  .pad { flex: none; width: 50%; height: 1px; }
+  .scale {
+    flex: none; width: 721px; height: 26px; margin-bottom: 10px;
+    background:
+      linear-gradient(90deg, rgba(255, 255, 255, 0.85) 1px, transparent 1px) 0 100% / 60px 18px repeat-x,
+      linear-gradient(90deg, rgba(255, 255, 255, 0.32) 1px, transparent 1px) 0 100% / 12px 9px repeat-x;
   }
-  .strip::before { content: "‹"; left: calc(57px + env(safe-area-inset-left)); }
+  .needle { position: absolute; left: 50%; bottom: 8px; width: 2px; height: 30px; margin-left: -1px; border-radius: 1px; background: var(--mark); pointer-events: none; }
+  .dial.stops { height: 84px; align-items: center; scroll-snap-type: x mandatory; }
+  .dial.stops .pad { width: calc(50% - 44px); }
+  .dial.stops ~ .needle { bottom: 14px; height: 3px; width: 28px; margin-left: -14px; }
+  .stop { flex: none; width: 88px; height: 44px; padding: 0; border: 0; background: transparent; scroll-snap-align: center; font-size: 15px; font-weight: 500; color: var(--faint); white-space: nowrap; }
+  .stop.on { color: var(--mark); font-weight: 600; }
+  .auto { flex: none; height: 30px; padding: 0 11px; border-radius: 6px; border: 1px solid var(--faint); background: transparent; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--soft); }
+  .auto.on { border-color: var(--mark); background: var(--mark); color: #111113; }
+
+  .strip { display: flex; align-items: center; height: 62px; padding-left: calc(12px + env(safe-area-inset-left)); position: relative; }
+  /* A small mark on the side where more settings wait. */
+  .strip::before, .strip::after { position: absolute; top: 0; height: 62px; width: 8px; display: none; align-items: center; justify-content: center; color: var(--soft); font-size: 15px; }
+  .strip::before { content: "‹"; left: calc(55px + env(safe-area-inset-left)); }
   .strip::after { content: "›"; right: env(safe-area-inset-right); }
   .strip.more-left::before, .strip.more-right::after { display: flex; }
-  .round {
-    flex: none; width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.24);
-    background: transparent; color: #f4f4f5; display: flex; align-items: center; justify-content: center; padding: 0;
-  }
-  .round svg { width: 21px; height: 21px; }
+  .round { flex: none; width: 42px; height: 42px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.22); background: transparent; display: flex; align-items: center; justify-content: center; padding: 0; }
+  .round svg { width: 20px; height: 20px; }
   .round:active { opacity: 0.6; }
   /* The settings share the width when they all fit. When a phone has more
      than fit, the strip scrolls sideways a whole setting at a time, so none is
      ever left half outside the screen (the page sets their width to that end). */
   .chips { flex: 1; min-width: 0; display: flex; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x mandatory; margin: 0 calc(8px + env(safe-area-inset-right)) 0 8px; }
   .chips::-webkit-scrollbar { display: none; }
-  .chip {
-    flex: none; scroll-snap-align: start; height: 48px; padding: 0 4px; border: 0; border-radius: 10px; background: transparent; overflow: hidden;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font: inherit;
-  }
-  .chip span, .chip b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-  .chip span { font-size: 11px; color: #8e8e98; white-space: nowrap; }
-  .chip b { font-size: 14px; font-weight: 600; color: #f4f4f5; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .chip.on { background: rgba(255, 255, 255, 0.13); }
-  /* A phone with many cameras has more choices than fit: they scroll. */
-  .seg { display: flex; max-width: 100%; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 8px; overflow-x: auto; scrollbar-width: none; }
-  .seg::-webkit-scrollbar { display: none; }
-  .seg button { flex: none; white-space: nowrap; height: 34px; min-width: 64px; padding: 0 14px; border: 0; border-left: 1px solid rgba(255, 255, 255, 0.16); background: transparent; color: #c9c9cf; font: inherit; font-size: 14px; }
-  .seg button:first-child { border-left: 0; }
-  .seg button.on { background: #f4f4f5; color: #111113; font-weight: 600; }
-  input[type="range"] { flex: 1; min-width: 0; margin: 0; accent-color: #f4f4f5; }
+  .chip { flex: none; scroll-snap-align: start; height: 62px; padding: 0 2px; border: 0; background: transparent; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+  .chip span, .chip b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip span { font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+  .chip b { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .chip.on span, .chip.on b { color: var(--mark); }
 
-  .notice {
-    position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center;
-    gap: 18px; padding: 0 36px; text-align: center; background: #000;
-  }
-  .notice p { margin: 0; max-width: 300px; }
-  .notice button {
-    height: 44px; padding: 0 22px; border-radius: 10px; border: 0; background: #f4f4f5; color: #111113;
-    font: inherit; font-weight: 600;
-  }
+  .notice { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 20px; padding: 0 36px; text-align: center; background: #000; }
+  .notice p { margin: 0; max-width: 300px; color: var(--ink); }
+  .notice button { height: 44px; padding: 0 22px; border-radius: 10px; border: 0; background: var(--ink); color: #111113; font-weight: 600; }
   body.notice-on .notice { display: flex; }
-  body.notice-on .dock, body.notice-on .status { display: none; }
+  body.notice-on .dock, body.notice-on .top { display: none; }
 </style>
 </head>
 <body>
 <video id="video" autoplay muted playsinline></video>
-<div class="status" id="status"></div>
+<div class="top"><div id="status"></div><div id="figures"></div></div>
 <div class="dock">
   <div class="editor" id="editor"></div>
   <div class="strip" id="strip">
