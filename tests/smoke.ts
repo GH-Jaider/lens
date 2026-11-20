@@ -1,9 +1,6 @@
 // Starts the real app (window, tray and all) and checks that it comes up and
 // serves its page. On Linux CI this runs under xvfb.
 import { spawn } from "node:child_process"
-import fs from "node:fs"
-import os from "node:os"
-import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 const exe = process.platform === "win32" ? ".exe" : ""
