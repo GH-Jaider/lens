@@ -267,7 +267,7 @@ export function cameraParams(track: MediaStreamTrack, wanted: Wanted, t: Texts, 
   const focus = mode(t.focus, "focusMode", can.focusMode, usable(can.focusDistance))
   if (focus && usable(can.focusDistance)) {
     const range = can.focusDistance
-    const show = (metres: number) => `${metres.toFixed(2)} m`
+    const show = (metres: number) => `${metres.toFixed(1)} m`
     params.push(
       slider(t.distance, range, now.focusDistance ?? range.min, show, (focusDistance) => {
         focus.value = t.manual

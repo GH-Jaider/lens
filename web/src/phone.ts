@@ -28,8 +28,8 @@ const t = pick({
       shutter: "Shutter",
       iso: "ISO",
       brightness: "Brightness",
-      white: "White balance",
-      temperature: "Temperature",
+      white: "WB",
+      temperature: "Kelvin",
       focus: "Focus",
       distance: "Distance",
       auto: "Auto",
@@ -61,8 +61,8 @@ const t = pick({
       shutter: "Obturador",
       iso: "ISO",
       brightness: "Brillo",
-      white: "Balance",
-      temperature: "Temperatura",
+      white: "Blancos",
+      temperature: "Kelvin",
       focus: "Enfoque",
       distance: "Distancia",
       auto: "Auto",
@@ -178,7 +178,27 @@ function edit(index: number) {
   $("editor").replaceChildren()
   params[editing]?.open($("editor"), paint)
   paint()
+  // A setting half off the edge comes fully into view when it is chosen.
+  $("chips").children[editing]?.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" })
 }
+
+/** Gives every setting the same width, chosen so a whole number of them fit. */
+function layout() {
+  const strip = $("chips")
+  const fit = Math.max(1, Math.floor(strip.clientWidth / 66))
+  const width = strip.clientWidth / Math.min(fit, params.length || 1)
+  for (const chip of strip.children) (chip as HTMLElement).style.width = `${width}px`
+  more()
+}
+
+/** Marks the side of the strip where settings are out of view. */
+function more() {
+  const strip = $("chips")
+  $("strip").classList.toggle("more-left", strip.scrollLeft > 2)
+  $("strip").classList.toggle("more-right", strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 2)
+}
+addEventListener("resize", layout)
+$("chips").addEventListener("scroll", more)
 
 function controls() {
   const [track] = stream?.getVideoTracks() ?? []
@@ -196,6 +216,7 @@ function controls() {
       return chip
     }),
   )
+  layout()
   paint()
 }
 

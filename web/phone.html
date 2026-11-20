@@ -32,19 +32,31 @@
   }
   body.editing .editor { display: flex; }
   .editor output { flex: none; width: 64px; text-align: right; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .strip { display: flex; align-items: center; height: 64px; padding-left: calc(12px + env(safe-area-inset-left)); }
+  .strip { display: flex; align-items: center; height: 64px; padding-left: calc(12px + env(safe-area-inset-left)); position: relative; }
+  /* A small mark on the side where more settings wait. */
+  .strip::before, .strip::after {
+    position: absolute; top: 0; height: 64px; width: 8px; display: none; align-items: center; justify-content: center;
+    color: #8e8e98; font-size: 15px;
+  }
+  .strip::before { content: "‹"; left: calc(57px + env(safe-area-inset-left)); }
+  .strip::after { content: "›"; right: env(safe-area-inset-right); }
+  .strip.more-left::before, .strip.more-right::after { display: flex; }
   .round {
     flex: none; width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.24);
     background: transparent; color: #f4f4f5; display: flex; align-items: center; justify-content: center; padding: 0;
   }
   .round svg { width: 21px; height: 21px; }
   .round:active { opacity: 0.6; }
-  .chips { flex: 1; display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; padding: 0 10px; }
+  /* The settings share the width when they all fit. When a phone has more
+     than fit, the strip scrolls sideways a whole setting at a time, so none is
+     ever left half outside the screen (the page sets their width to that end). */
+  .chips { flex: 1; min-width: 0; display: flex; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x mandatory; margin: 0 calc(8px + env(safe-area-inset-right)) 0 8px; }
   .chips::-webkit-scrollbar { display: none; }
   .chip {
-    flex: none; min-width: 70px; height: 48px; padding: 0 10px; border: 0; border-radius: 10px; background: transparent;
+    flex: none; scroll-snap-align: start; height: 48px; padding: 0 4px; border: 0; border-radius: 10px; background: transparent; overflow: hidden;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font: inherit;
   }
+  .chip span, .chip b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   .chip span { font-size: 11px; color: #8e8e98; white-space: nowrap; }
   .chip b { font-size: 14px; font-weight: 600; color: #f4f4f5; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .chip.on { background: rgba(255, 255, 255, 0.13); }
@@ -72,7 +84,7 @@
 <div class="status" id="status"></div>
 <div class="dock">
   <div class="editor" id="editor"></div>
-  <div class="strip">
+  <div class="strip" id="strip">
     <button class="round" id="flip">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9a8 8 0 0 1 14.5-3.5L20 7"/><path d="M20 3v4h-4"/><path d="M20 15a8 8 0 0 1-14.5 3.5L4 17"/><path d="M4 21v-4h4"/></svg>
     </button>

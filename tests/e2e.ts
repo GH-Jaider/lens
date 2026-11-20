@@ -200,6 +200,20 @@ try {
     await phone.evaluate(`!document.body.classList.contains("editing")`),
   )
 
+  // Nothing in the strip is ever left half outside the screen.
+  const inside = `(() => {
+    const chips = [...document.querySelectorAll("#chips .chip")]
+    const last = chips.at(-1)
+    last.click()
+    return new Promise((done) => setTimeout(() => {
+      const box = last.getBoundingClientRect()
+      const cut = chips.some((chip) => [...chip.children].some((part) => part.scrollWidth > part.clientWidth))
+      last.click()
+      done(box.left >= 0 && box.right <= innerWidth && !cut)
+    }, 800))
+  })()`
+  check("a setting at the end of the strip comes fully into view", await phone.evaluate(inside))
+
   // The preview can be switched off without OBS losing the picture.
   await app.evaluate(`document.getElementById("eye").click()`)
   check(
