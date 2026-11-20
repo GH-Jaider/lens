@@ -40,8 +40,13 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, _, _| open_window(app)))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
-            let data_dir = app.path().app_data_dir()?;
-            let started = tauri::async_runtime::block_on(server::start(data_dir, true))?;
+            // Without a folder of its own Lens still runs; the phone only warns
+            // about the certificate again next time.
+            let data_dir = app.path().app_data_dir().unwrap_or_else(|_| std::env::temp_dir().join("lens"));
+            // The tests start the real app, and must not touch the scenes of an
+            // OBS that happens to be open.
+            let with_obs = std::env::var_os("LENS_NO_OBS").is_none();
+            let started = tauri::async_runtime::block_on(server::start(data_dir, with_obs))?;
             app.manage(LocalPort(started.local_port));
 
             let handle = app.handle().clone();

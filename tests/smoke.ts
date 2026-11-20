@@ -8,12 +8,8 @@ import { fileURLToPath } from "node:url"
 
 const exe = process.platform === "win32" ? ".exe" : ""
 const binary = process.env.LENS_BINARY ?? fileURLToPath(new URL(`../target/debug/lens${exe}`, import.meta.url))
-const home = fs.mkdtempSync(path.join(os.tmpdir(), "lens-smoke-"))
-// Its own home, so the test never reads this machine's OBS settings.
-const child = spawn(binary, [], {
-  env: { ...process.env, HOME: home, USERPROFILE: home, APPDATA: home, XDG_CONFIG_HOME: home, XDG_DATA_HOME: home },
-  stdio: "inherit",
-})
+// The app is told to leave OBS alone: this machine's scenes are not the test's.
+const child = spawn(binary, [], { env: { ...process.env, LENS_NO_OBS: "1" }, stdio: "inherit" })
 let exited: number | null = null
 child.on("exit", (code) => {
   exited = code
