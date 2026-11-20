@@ -77,30 +77,36 @@ async function startLens(): Promise<Lens> {
 }
 
 async function startChrome(chrome: string): Promise<(url: string) => Promise<Page>> {
-  const profile = path.join(temp, "chrome")
-  const child = spawn(
-    chrome,
-    [
-      "--headless=new",
-      "--remote-debugging-port=0",
-      `--user-data-dir=${profile}`,
-      "--no-first-run",
-      // Three cameras, as a phone has.
-      "--use-fake-device-for-media-stream=device-count=3",
-      "--use-fake-ui-for-media-stream",
-      "--ignore-certificate-errors",
-      "--autoplay-policy=no-user-gesture-required",
-      // A CI machine runs as root or without the kernel features the sandbox wants.
-      ...(process.env.CI ? ["--no-sandbox"] : []),
-      "about:blank",
-    ],
-    { stdio: "ignore" },
-  )
-  children.push(child)
-  const port = await until(
-    async () => Number(fs.readFileSync(path.join(profile, "DevToolsActivePort"), "utf8").split("\n")[0]),
-    45000,
-  )
+  // A machine under load sometimes starts Chrome too slowly, or not at all:
+  // one more try with a fresh Chrome, as a person would do.
+  let port: number | null = null
+  for (let attempt = 1; attempt <= 2 && !port; attempt++) {
+    const profile = path.join(temp, `chrome-${attempt}`)
+    const child = spawn(
+      chrome,
+      [
+        "--headless=new",
+        "--remote-debugging-port=0",
+        `--user-data-dir=${profile}`,
+        "--no-first-run",
+        // Three cameras, as a phone has.
+        "--use-fake-device-for-media-stream=device-count=3",
+        "--use-fake-ui-for-media-stream",
+        "--ignore-certificate-errors",
+        "--autoplay-policy=no-user-gesture-required",
+        // A CI machine runs as root or without the kernel features the sandbox wants.
+        ...(process.env.CI ? ["--no-sandbox"] : []),
+        "about:blank",
+      ],
+      { stdio: "ignore" },
+    )
+    children.push(child)
+    port = await until(
+      async () => Number(fs.readFileSync(path.join(profile, "DevToolsActivePort"), "utf8").split("\n")[0]),
+      45000,
+    )
+    if (!port) child.kill()
+  }
   if (!port) throw new Error("Chrome did not open its DevTools port.")
 
   return async function open(url) {
