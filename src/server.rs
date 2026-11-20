@@ -116,8 +116,10 @@ pub async fn start(data_dir: PathBuf, with_obs: bool) -> Result<Started, String>
 
     let token = random_token();
     let view_url = format!("http://127.0.0.1:{local_port}/view");
-    let hub =
-        Arc::new(Hub::new(token.clone(), UiState { view_url: view_url.clone(), obs: "off", ..UiState::default() }));
+    let hub = Arc::new(Hub::new(
+        token.clone(),
+        UiState { view_url: view_url.clone(), obs: "off", version: env!("CARGO_PKG_VERSION"), ..UiState::default() },
+    ));
 
     let (cert, key) = tls::cert_for(&data_dir, IpAddr::V4(Ipv4Addr::LOCALHOST))?;
     let tls = RustlsConfig::from_pem(cert, key).await.map_err(|error| error.to_string())?;

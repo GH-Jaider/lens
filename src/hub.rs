@@ -33,6 +33,8 @@ pub struct UiState {
     /// The newer version waiting to be installed; empty when up to date.
     pub update: String,
     pub updating: bool,
+    /// The version of this Lens, shown in a corner of the window.
+    pub version: &'static str,
 }
 
 /// Changes the state and wakes its listeners only when something changed.

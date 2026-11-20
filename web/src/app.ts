@@ -180,6 +180,8 @@ function render() {
   $("title").textContent = state.phone ? t.live : state.url ? t.scan : t.offline
   $("update").textContent = state.updating ? t.updating : `${t.update} ${state.update}`
   $("update").classList.toggle("on", Boolean(state.update))
+  // The version sits where the update button appears, and gives way to it.
+  $("version").textContent = state.update ? "" : state.version
 
   // OBS has the source but its page never opened: on a Mac, a browser source
   // added while OBS runs stays blank until OBS is opened again.

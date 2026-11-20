@@ -14,6 +14,7 @@ export interface UiState {
   obs_live: boolean
   update: string
   updating: boolean
+  version: string
 }
 
 /** One step of the WebRTC handshake. */
