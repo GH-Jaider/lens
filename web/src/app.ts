@@ -32,6 +32,7 @@ interface Texts {
   updating: string
   copy: string
   copied: string
+  support: string
 }
 
 const en: Texts = {
@@ -70,6 +71,7 @@ const en: Texts = {
   updating: "Updating…",
   copy: "Copy OBS link",
   copied: "Copied",
+  support: "Lens is free. Buy its maker a coffee on Ko-fi",
 }
 
 const es: Texts = {
@@ -108,6 +110,7 @@ const es: Texts = {
   updating: "Actualizando…",
   copy: "Copiar enlace",
   copied: "Copiado",
+  support: "Lens es gratis. Invítale un café a quien lo hace, en Ko-fi",
 }
 
 const t = pick({ en, es })
@@ -235,6 +238,9 @@ $("eye").onclick = () => {
   }
   watch()
 }
+
+$("cup").title = t.support
+$("cup").onclick = () => fetch("/support", { method: "POST" }).catch(() => {})
 
 $("update").onclick = () => fetch("/update", { method: "POST" }).catch(() => {})
 

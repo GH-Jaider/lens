@@ -1,5 +1,7 @@
 # Lens
 
+[![Support Lens on Ko-fi](https://img.shields.io/badge/Ko--fi-support_Lens-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/hit_here)
+
 Scan a QR code and your phone becomes a camera in OBS. Nothing to install on the phone.
 
 <img src="docs/window.png" width="368" alt="The Lens window: a QR code to scan and the three steps to follow">
@@ -80,6 +82,10 @@ Set the same version in `Cargo.toml` and `tauri.conf.json`, then push a tag (`gi
 | `src/main.rs` | Window, tray, updates, `--headless` |
 | `web/` | The app window, the phone page and the page OBS loads; their TypeScript is in `web/src` |
 | `tests/` | End to end, with a headless Chrome as the phone and as OBS |
+
+## Support
+
+Lens is free. If it earns a place in your setup, you can buy its maker a coffee on **[Ko-fi](https://ko-fi.com/hit_here)**.
 
 ## License
 

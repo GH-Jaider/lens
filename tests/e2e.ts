@@ -163,6 +163,7 @@ try {
     await viewer.evaluate(`document.querySelector("video").classList.contains("live")`),
   )
   check("the app window previews it", Boolean(await until(() => app.evaluate(picture))))
+  check("the window has its Ko-fi cup", await app.evaluate(`document.getElementById("cup").title.includes("Ko-fi")`))
   check(
     "the app says the phone is connected",
     await until(() => app.evaluate(`document.getElementById("m1").className === "mark dot ok"`)),

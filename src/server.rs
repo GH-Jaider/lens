@@ -135,6 +135,7 @@ pub async fn start(data_dir: PathBuf, with_obs: bool) -> Result<Started, String>
         .route("/live", post(live))
         .route("/fit", post(fit))
         .route("/update", post(install))
+        .route("/support", post(support))
         .layer(middleware::from_fn(local_only))
         .with_state(Ctx { hub: hub.clone(), phone_side: false });
     let phone_app = Router::new()
@@ -270,5 +271,11 @@ async fn fit(State(ctx): State<Ctx>, Query(params): Query<Params>) -> StatusCode
 
 async fn install(State(ctx): State<Ctx>) -> StatusCode {
     ctx.hub.install.notify_one();
+    StatusCode::NO_CONTENT
+}
+
+/// Ko-fi, in the computer's browser: the app's window opens no pages itself.
+async fn support() -> StatusCode {
+    let _ = open::that("https://ko-fi.com/hit_here");
     StatusCode::NO_CONTENT
 }
