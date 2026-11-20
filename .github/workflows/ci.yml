@@ -29,6 +29,8 @@ jobs:
       - name: Linux libraries
         if: runner.os == 'Linux'
         run: |
+          # Rebuilding the manual pages after every package is most of the wait.
+          sudo rm -f /var/lib/man-db/auto-update
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf xvfb
       - run: pnpm install --frozen-lockfile
