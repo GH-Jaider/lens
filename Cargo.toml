@@ -1,6 +1,6 @@
 [package]
 name = "lens"
-version = "0.1.1"
+version = "0.1.2"
 description = "Scan a QR code and use your phone as a camera in OBS."
 edition = "2021"
 license = "Apache-2.0"
