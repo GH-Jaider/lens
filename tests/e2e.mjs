@@ -1,0 +1,158 @@
+// End to end, with no phone: starts Lens without its window, opens the phone
+// page and the OBS page in a headless Chrome whose camera is a test pattern,
+// and checks that the picture arrives. Needs Node 22+ and Chrome.
+import { spawn } from "node:child_process"
+import fs from "node:fs"
+import http from "node:http"
+import os from "node:os"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
+
+const CHROME = [
+  process.env.CHROME_PATH,
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/usr/bin/google-chrome",
+  "/usr/bin/chromium",
+  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+].find((candidate) => candidate && fs.existsSync(candidate))
+if (!CHROME) throw new Error("Chrome was not found (set CHROME_PATH).")
+const exe = process.platform === "win32" ? ".exe" : ""
+const BINARY = process.env.LENS_BINARY ?? fileURLToPath(new URL(`../target/debug/lens${exe}`, import.meta.url))
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const temp = fs.mkdtempSync(path.join(os.tmpdir(), "lens-test-"))
+const children = []
+let failed = false
+
+function check(name, ok, detail = "") {
+  console.log(`${ok ? "ok  " : "FAIL"} ${name}${detail ? ` (${detail})` : ""}`)
+  if (!ok) failed = true
+}
+
+async function until(read, timeout = 15000) {
+  const end = Date.now() + timeout
+  let value
+  while (Date.now() < end) {
+    value = await read().catch(() => null)
+    if (value) return value
+    await delay(200)
+  }
+  return value
+}
+
+async function startLens() {
+  const child = spawn(BINARY, ["--headless"], { env: { ...process.env, LENS_DATA: path.join(temp, "data") }, stdio: ["ignore", "pipe", "inherit"] })
+  children.push(child)
+  let out = ""
+  child.stdout.on("data", (chunk) => { out += chunk })
+  await until(async () => out.includes("\n"))
+  return { ...JSON.parse(out), child }
+}
+
+async function startChrome() {
+  const profile = path.join(temp, "chrome")
+  const child = spawn(CHROME, [
+    "--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run",
+    "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", "--ignore-certificate-errors",
+    "--autoplay-policy=no-user-gesture-required",
+    // A CI machine runs as root or without the kernel features the sandbox wants.
+    ...(process.env.CI ? ["--no-sandbox"] : []), "about:blank"
+  ], { stdio: "ignore" })
+  children.push(child)
+  const port = await until(async () => Number(fs.readFileSync(path.join(profile, "DevToolsActivePort"), "utf8").split("\n")[0]), 45000)
+  return async function open(url) {
+    const target = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: "PUT" })).json()
+    const socket = new WebSocket(target.webSocketDebuggerUrl)
+    await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject })
+    let next = 1
+    const pending = new Map()
+    socket.onmessage = (event) => {
+      const message = JSON.parse(event.data)
+      pending.get(message.id)?.(message.result)
+      pending.delete(message.id)
+    }
+    const page = {
+      async evaluate(expression) {
+        const id = next++
+        const result = await new Promise((resolve) => {
+          pending.set(id, resolve)
+          socket.send(JSON.stringify({ id, method: "Runtime.evaluate", params: { expression, returnByValue: true, awaitPromise: true } }))
+        })
+        return result?.result?.value
+      },
+      close: () => fetch(`http://127.0.0.1:${port}/json/close/${target.id}`).catch(() => {})
+    }
+    return page
+  }
+}
+
+const picture = `(() => { const v = document.querySelector("video"); return v.videoWidth > 0 && v.currentTime > 0 ? v.videoWidth + "x" + v.videoHeight : "" })()`
+
+try {
+  const lens = await startLens()
+  const open = await startChrome()
+
+  // fetch() does not let a caller choose the Host header, so this one is by hand.
+  const refused = await new Promise((resolve) => {
+    http.get(`${lens.local}/`, { headers: { host: "evil.example:47800" } }, (response) => resolve(response.statusCode)).on("error", () => resolve(0))
+  })
+  check("local pages refuse another site's name", refused === 403, String(refused))
+
+  const state = await (await fetch(`${lens.local}/state`)).body.getReader().read().then(({ value }) => new TextDecoder().decode(value))
+  check("the app receives its state", state.includes('"view_url"'))
+
+  const viewer = await open(`${lens.local}/view`)
+  const app = await open(`${lens.local}/`)
+  await delay(500)
+  const phone = await open(lens.phone)
+
+  const size = await until(() => viewer.evaluate(picture))
+  check("the OBS page shows the phone's picture", Boolean(size), size)
+  check("the OBS page reveals the video", await viewer.evaluate(`document.querySelector("video").classList.contains("live")`))
+  check("the app window previews it", Boolean(await until(() => app.evaluate(picture))))
+  check("the app says the phone is connected", await until(() => app.evaluate(`document.getElementById("m1").className === "mark dot ok"`)))
+  const told = await until(async () => (await (await fetch(`${lens.local}/state`)).body.getReader().read().then(({ value }) => new TextDecoder().decode(value))).includes('"obs_live":true'))
+  check("Lens knows the OBS page is showing the picture", Boolean(told))
+  check("the phone says it is live", await until(() => phone.evaluate(`document.getElementById("status").classList.contains("live")`)))
+
+  await phone.evaluate(`document.getElementById("flip").click()`)
+  await delay(1500)
+  const before = await viewer.evaluate(`document.querySelector("video").currentTime`)
+  await delay(1000)
+  check("the picture keeps moving after switching camera", (await viewer.evaluate(`document.querySelector("video").currentTime`)) > before)
+
+  // A page that opens late (OBS started after the phone) still gets the picture.
+  const late = await open(`${lens.local}/view`)
+  check("a viewer that joins later gets the picture", Boolean(await until(() => late.evaluate(picture))))
+
+  const wrong = await open(lens.phone.replace(/t=.*/, "t=wrong"))
+  await delay(1500)
+  check("a wrong code does not take over", await viewer.evaluate(picture) !== "")
+  await wrong.close()
+
+  // A second phone with the right code takes over, and the first is told.
+  const second = await open(lens.phone)
+  check("the first phone is told it was replaced", await until(() => phone.evaluate(`document.body.classList.contains("notice-on")`)))
+  check("the second phone goes live", await until(() => second.evaluate(`document.getElementById("status").classList.contains("live")`)))
+  check("the viewer shows the second phone", Boolean(await until(() => viewer.evaluate(picture))))
+
+  await second.close()
+  check("the viewer clears when the phone leaves", await until(() => viewer.evaluate(`!document.querySelector("video").classList.contains("live")`), 20000))
+  check("the app goes back to waiting", await until(() => app.evaluate(`document.getElementById("m1").className === "mark"`)))
+
+  // Lens is closed and opened again while OBS stays open with its page loaded.
+  lens.child.kill()
+  await delay(6000)
+  const reborn = await startLens()
+  check("Lens comes back on the same address", reborn.local === lens.local, reborn.local)
+  const third = await open(reborn.phone)
+  check("the page OBS kept open finds Lens again", Boolean(await until(() => viewer.evaluate(picture), 20000)))
+  await third.close()
+} catch (error) {
+  check("the test ran", false, String(error))
+} finally {
+  for (const child of children) child.kill()
+  await delay(300)
+  // Windows keeps Chrome's files locked for a moment after it closes.
+  try { fs.rmSync(temp, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 }) } catch { /* the system clears it */ }
+}
+process.exit(failed ? 1 : 0)

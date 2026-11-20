@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Lens",
+  "version": "0.1.0",
+  "identifier": "app.lens.desktop",
+  "build": { "frontendDist": "./web" },
+  "app": { "windows": [], "security": { "csp": null } },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE0NkVDMDI1RTNBQjEwQTgKUldTb0VLdmpKY0J1cFBGMTNxRlY1cDlETHM5Wk13VzZLaUVKcnpiWDg3Ukp3ZFp3ZWovSE1JRHEK",
+      "endpoints": ["https://github.com/GH-Jaider/lens/releases/latest/download/latest.json"],
+      "windows": { "installMode": "passive" }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": "all",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "macOS": { "minimumSystemVersion": "11.0", "signingIdentity": "-" }
+  }
+}

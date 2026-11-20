@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lens</title>
+<style>
+  :root {
+    --bg: #fbfbfa; --text: #17171a; --muted: #6e6e78; --faint: #a3a3ab; --line: #e6e6e2; --card: #ffffff;
+    --ok: #1f8a5b; --warn: #b26a0c;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #101012; --text: #ededef; --muted: #8e8e98; --faint: #5c5c66; --line: #25252a; --card: #18181b; --ok: #4cc38a; --warn: #e2a336; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 13px/18px -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased; user-select: none; -webkit-user-select: none; cursor: default;
+  }
+  /* Every block has a fixed height, so nothing moves when the state changes. */
+  main { width: 320px; margin: 0 auto; padding-top: 20px; }
+
+  .stage {
+    width: 320px; height: 320px; border-radius: 16px; border: 1px solid var(--line);
+    background: #fff; position: relative; overflow: hidden;
+  }
+  .stage > * { position: absolute; inset: 0; transition: opacity 0.2s; }
+  #qr { padding: 28px; }
+  #qr svg { width: 100%; height: 100%; display: block; }
+  #video { width: 100%; height: 100%; object-fit: contain; background: #000; opacity: 0; }
+  #offline {
+    display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 44px;
+    background: var(--card); color: var(--muted); opacity: 0;
+  }
+  .badge {
+    inset: 12px auto auto 12px; height: 24px; padding: 0 10px 0 9px; border-radius: 12px; display: flex; align-items: center; gap: 7px;
+    background: rgba(0, 0, 0, 0.62); color: #f4f4f5; font-size: 12px; font-weight: 500; opacity: 0;
+  }
+  .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #4cc38a; }
+  .stage.live #video, .stage.live .badge, .stage.offline #offline { opacity: 1; }
+  .stage.offline #qr, .stage.live #qr { opacity: 0; }
+
+  .head { margin-top: 20px; height: 24px; display: flex; align-items: center; justify-content: space-between; }
+  h1 { margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; letter-spacing: -0.012em; white-space: nowrap; }
+  #update { width: auto; height: 24px; padding: 0 10px; visibility: hidden; }
+  #update.on { visibility: visible; }
+
+  ol { list-style: none; margin: 12px 0 0; padding: 0; border-top: 1px solid var(--line); }
+  li { height: 52px; display: grid; grid-template-columns: 32px 1fr; align-items: center; border-bottom: 1px solid var(--line); }
+  .mark {
+    width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 500; font-style: normal; color: var(--muted); border: 1px solid var(--faint);
+  }
+  /* A status row keeps the number's slot and puts a dot in it. */
+  .mark.dot { border-color: transparent; }
+  .mark.dot::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+  .mark.ok::before { background: var(--ok); }
+  .mark.warn::before { background: var(--warn); }
+  li b, li span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  li b { font-weight: 500; }
+  li span { font-size: 12px; line-height: 17px; color: var(--muted); }
+
+  footer { margin-top: 14px; height: 32px; display: flex; align-items: center; justify-content: space-between; }
+  #foot { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+  #foot::before { content: ""; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--faint); }
+  #foot.ok::before { background: var(--ok); }
+  #foot.warn::before { background: var(--warn); }
+  /* With a phone connected the rows above already say it. */
+  #foot.said { visibility: hidden; }
+  button {
+    width: 112px; height: 28px; border-radius: 7px; border: 1px solid var(--line); background: var(--card);
+    color: var(--text); font: inherit; font-size: 12px; font-weight: 500; cursor: default; padding: 0;
+  }
+  button:active { opacity: 0.65; }
+</style>
+</head>
+<body>
+<main>
+  <div class="stage" id="stage">
+    <div id="qr"></div>
+    <div id="offline"></div>
+    <video id="video" autoplay muted playsinline></video>
+    <div class="badge" id="badge"></div>
+  </div>
+
+  <div class="head"><h1 id="title"></h1><button id="update"></button></div>
+
+  <ol>
+    <li><i class="mark" id="m1"></i><div><b id="a1"></b><span id="b1"></span></div></li>
+    <li><i class="mark" id="m2"></i><div><b id="a2"></b><span id="b2"></span></div></li>
+    <li><i class="mark" id="m3"></i><div><b id="a3"></b><span id="b3"></span></div></li>
+  </ol>
+
+  <footer><div id="foot"></div><button id="copy"></button></footer>
+</main>
+
+<script src="/viewer.js"></script>
+<script>
+  // Each row is [title, detail].
+  const TEXT = {
+    en: {
+      scan: "Scan with your phone", live: "Your phone is the camera", offline: "No network",
+      offlineBody: "Join this computer to the same Wi‑Fi as your phone.", badge: "Live",
+      steps: [
+        ["Scan the code", "With the phone's camera, on the same Wi‑Fi"],
+        ["Continue past the warning", "Tap Details or Advanced, then visit the site"],
+        ["Allow the camera", "Nothing is installed on the phone"]
+      ],
+      phone: ["Phone connected", "Keep this page open and the screen on"],
+      obsLive: ["OBS is showing it", "It is the source named Lens"],
+      obsWait: ["OBS is getting the picture", "It should appear in a moment"],
+      obsOff: ["OBS is not open", "Open it and Lens adds the phone by itself"],
+      obsDisabled: ["OBS needs one setting", "Tools → WebSocket Server Settings → enable"],
+      obsAuth: ["OBS refused its password", "Quit OBS and Lens, then open both again"],
+      obsRestart: ["Open OBS again, just this once", "Its browser only starts when OBS opens"],
+      camOn: ["Virtual camera on", "Other apps see it as OBS Virtual Camera"],
+      camOff: ["Virtual camera off", "Start it in OBS to use the phone in other apps"],
+      foot: { ready: "OBS ready", live: "OBS is showing the phone", off: "OBS is not open", disabled: "OBS needs one setting", auth: "OBS refused its password", restart: "Open OBS again" },
+      noPreview: "The picture goes straight to OBS. This window cannot preview it on this system.",
+      update: "Update to", updating: "Updating…",
+      copy: "Copy OBS link", copied: "Copied"
+    },
+    es: {
+      scan: "Escanea con tu celular", live: "Tu celular es la cámara", offline: "Sin red",
+      offlineBody: "Conecta este computador al mismo wifi que tu celular.", badge: "En vivo",
+      steps: [
+        ["Escanea el código", "Con la cámara del celular, en el mismo wifi"],
+        ["Continúa tras el aviso", "Toca Detalles o Avanzado y visita el sitio"],
+        ["Permite la cámara", "No se instala nada en el celular"]
+      ],
+      phone: ["Celular conectado", "Deja esta página abierta y la pantalla encendida"],
+      obsLive: ["OBS lo está mostrando", "Es la fuente llamada Lens"],
+      obsWait: ["OBS está recibiendo la imagen", "Debería aparecer en un momento"],
+      obsOff: ["OBS está cerrado", "Ábrelo y Lens añade el celular por sí solo"],
+      obsDisabled: ["A OBS le falta un ajuste", "Herramientas → Servidor WebSocket → activar"],
+      obsAuth: ["OBS rechazó su contraseña", "Cierra OBS y Lens, y abre ambos de nuevo"],
+      obsRestart: ["Abre OBS de nuevo, solo esta vez", "Su navegador arranca al abrir OBS"],
+      camOn: ["Cámara virtual encendida", "Otras apps la ven como OBS Virtual Camera"],
+      camOff: ["Cámara virtual apagada", "Enciéndela en OBS para usarla en otras apps"],
+      foot: { ready: "OBS listo", live: "OBS muestra el celular", off: "OBS está cerrado", disabled: "A OBS le falta un ajuste", auth: "OBS rechazó su contraseña", restart: "Abre OBS de nuevo" },
+      noPreview: "La imagen va directo a OBS. Esta ventana no puede mostrarla en este sistema.",
+      update: "Actualizar a", updating: "Actualizando…",
+      copy: "Copiar enlace", copied: "Copiado"
+    }
+  }
+  const t = TEXT[navigator.language.slice(0, 2)] ?? TEXT.en
+  const $ = (id) => document.getElementById(id)
+  document.documentElement.lang = t === TEXT.es ? "es" : "en"
+  $("copy").textContent = t.copy
+  $("offline").textContent = t.offlineBody
+  $("badge").textContent = t.badge
+
+  let state = null
+  let live = false
+  let stuckSince = 0
+
+  function row(n, [title, detail], mark) {
+    $("a" + n).textContent = title
+    $("b" + n).textContent = detail
+    $("m" + n).textContent = mark ? "" : n
+    $("m" + n).className = mark ? `mark dot ${mark}` : "mark"
+  }
+
+  function render() {
+    if (!state) return
+    if ($("qr").dataset.url !== state.url) {
+      $("qr").dataset.url = state.url
+      $("qr").innerHTML = state.qr
+    }
+    // Some Linux systems ship a web view that cannot receive video: the phone
+    // still reaches OBS, so say that instead of leaving the code on screen.
+    const blind = state.phone && !("RTCPeerConnection" in window)
+    $("offline").textContent = blind ? t.noPreview : t.offlineBody
+    $("stage").classList.toggle("offline", blind || (!state.url && !live))
+    $("update").textContent = state.updating ? t.updating : `${t.update} ${state.update}`
+    $("update").classList.toggle("on", Boolean(state.update))
+    $("stage").classList.toggle("live", live)
+    $("title").textContent = state.phone ? t.live : state.url ? t.scan : t.offline
+
+    // OBS has the source but its page never opened: on a Mac, a browser source
+    // added while OBS runs stays blank until OBS is opened again.
+    const stuck = state.obs === "ready" && state.source && state.phone && !state.obs_page
+    if (!stuck) stuckSince = 0
+    else if (!stuckSince) { stuckSince = Date.now(); setTimeout(render, 20100) }
+    const restart = stuck && Date.now() - stuckSince > 20000
+
+    const obs =
+      restart ? ["restart", t.obsRestart, "warn"]
+      : state.obs === "ready" ? (state.obs_live ? ["live", t.obsLive, "ok"] : ["ready", t.obsWait, "idle"])
+      : state.obs === "disabled" ? ["disabled", t.obsDisabled, "warn"]
+      : state.obs === "auth" ? ["auth", t.obsAuth, "warn"]
+      : ["off", t.obsOff, "idle"]
+
+    if (state.phone) {
+      row(1, t.phone, "ok")
+      row(2, obs[1], obs[2])
+      row(3, state.vcam ? t.camOn : t.camOff, state.vcam ? "ok" : "idle")
+    } else {
+      t.steps.forEach((step, index) => row(index + 1, step))
+    }
+    $("foot").textContent = t.foot[obs[0]]
+    $("foot").className = (obs[0] === "ready" ? "ok" : obs[2]) + (state.phone ? " said" : "")
+  }
+
+  // Tells Lens the room this page really got, so it can size the window to it.
+  const fit = () => fetch(`/fit?w=${innerWidth}&h=${innerHeight}`, { method: "POST" }).catch(() => {})
+  addEventListener("resize", fit)
+  fit()
+
+  function follow() {
+    const events = new EventSource("/state")
+    events.onmessage = (event) => { state = JSON.parse(event.data); render() }
+    events.onerror = () => { if (events.readyState === EventSource.CLOSED) setTimeout(follow, 2000) }
+  }
+  follow()
+  if ("RTCPeerConnection" in window) startViewer($("video"), (now) => { live = now; render() })
+
+  $("update").onclick = () => fetch("/update", { method: "POST" }).catch(() => {})
+
+  $("copy").onclick = async () => {
+    if (!state) return
+    try { await navigator.clipboard.writeText(state.view_url) }
+    catch {
+      const field = Object.assign(document.createElement("textarea"), { value: state.view_url })
+      document.body.append(field); field.select(); document.execCommand("copy"); field.remove()
+    }
+    $("copy").textContent = t.copied
+    setTimeout(() => { $("copy").textContent = t.copy }, 1400)
+  }
+</script>
+</body>
+</html>

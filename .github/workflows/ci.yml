@@ -1,0 +1,36 @@
+# Builds Lens on the three systems and runs its tests on each: the phone and
+# the OBS page are played by a headless Chrome, and the real app is started.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf xvfb
+      - run: cargo build
+      - run: node tests/e2e.mjs
+      - name: Start the app
+        if: runner.os != 'Linux'
+        run: node tests/smoke.mjs
+      - name: Start the app (Linux, on a virtual screen)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node tests/smoke.mjs

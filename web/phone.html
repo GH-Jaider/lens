@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<title>Lens</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #000; color: #f4f4f5; overflow: hidden; }
+  body { font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+
+  .status {
+    position: fixed; top: calc(14px + env(safe-area-inset-top)); left: calc(14px + env(safe-area-inset-left));
+    display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-radius: 15px;
+    background: rgba(0, 0, 0, 0.6); font-size: 13px; font-weight: 500;
+  }
+  .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #8b8b95; }
+  .status.live::before { background: #4cc38a; }
+
+  .flip {
+    position: fixed; bottom: calc(22px + env(safe-area-inset-bottom)); left: 50%; margin-left: -28px;
+    width: 56px; height: 56px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.28);
+    background: rgba(0, 0, 0, 0.6); color: #f4f4f5; display: flex; align-items: center; justify-content: center; padding: 0;
+  }
+  .flip svg { width: 24px; height: 24px; }
+  .flip:active { opacity: 0.6; }
+
+  .notice {
+    position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px; padding: 0 36px; text-align: center; background: #000;
+  }
+  .notice p { margin: 0; max-width: 300px; }
+  .notice button {
+    height: 44px; padding: 0 22px; border-radius: 10px; border: 0; background: #f4f4f5; color: #111113;
+    font: inherit; font-weight: 600;
+  }
+  body.notice-on .notice { display: flex; }
+  body.notice-on .flip, body.notice-on .status { display: none; }
+</style>
+</head>
+<body>
+<video id="video" autoplay muted playsinline></video>
+<div class="status" id="status"></div>
+<button class="flip" id="flip" aria-label="Switch camera">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9a8 8 0 0 1 14.5-3.5L20 7"/><path d="M20 3v4h-4"/><path d="M20 15a8 8 0 0 1-14.5 3.5L4 17"/><path d="M4 21v-4h4"/></svg>
+</button>
+<div class="notice"><p id="notice"></p><button id="retry"></button></div>
+
+<script>
+  const TEXT = {
+    en: {
+      starting: "Starting camera", connecting: "Connecting", live: "Live", lost: "Looking for the computer",
+      denied: "Lens needs your camera. Allow it when the browser asks.",
+      insecure: "This page has to be opened from the code Lens shows on the computer.",
+      replaced: "Another phone took over as the camera.", retry: "Try again", again: "Use this phone"
+    },
+    es: {
+      starting: "Iniciando la cámara", connecting: "Conectando", live: "En vivo", lost: "Buscando el computador",
+      denied: "Lens necesita tu cámara. Permítela cuando el navegador pregunte.",
+      insecure: "Esta página debe abrirse desde el código que Lens muestra en el computador.",
+      replaced: "Otro celular pasó a ser la cámara.", retry: "Reintentar", again: "Usar este celular"
+    }
+  }
+  const t = TEXT[navigator.language.slice(0, 2)] ?? TEXT.en
+  const $ = (id) => document.getElementById(id)
+  document.documentElement.lang = t === TEXT.es ? "es" : "en"
+
+  const token = new URLSearchParams(location.search).get("t") ?? ""
+  const peers = new Map()
+  let stream = null
+  let facing = "environment"
+  let id = null
+  let events = null
+
+  function status(text, live = false) {
+    $("status").textContent = text
+    $("status").classList.toggle("live", live)
+  }
+
+  function notice(text, button) {
+    $("notice").textContent = text
+    $("retry").textContent = button
+    document.body.classList.add("notice-on")
+  }
+
+  function refresh() {
+    const live = [...peers.values()].some((peer) => peer.pc.connectionState === "connected")
+    status(live ? t.live : events?.readyState === 1 ? t.connecting : t.lost, live)
+  }
+
+  const send = (to, data) => fetch(`/signal?t=${token}&id=${id}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ to, data })
+  }).catch(() => {})
+
+  function camera() {
+    return navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
+    })
+  }
+
+  function drop(viewer) {
+    peers.get(viewer)?.pc.close()
+    peers.delete(viewer)
+  }
+
+  async function offer(viewer) {
+    drop(viewer)
+    const pc = new RTCPeerConnection()
+    const peer = { pc, waiting: [] }
+    peers.set(viewer, peer)
+    for (const track of stream.getTracks()) {
+      const sender = pc.addTrack(track, stream)
+      // The link is the local network, so quality matters more than thrift.
+      try {
+        const params = sender.getParameters()
+        if (params.encodings?.length) {
+          params.encodings[0].maxBitrate = 8_000_000
+          await sender.setParameters(params)
+        }
+      } catch { /* the browser keeps its own limit */ }
+    }
+    pc.onicecandidate = (event) => { if (event.candidate) send(viewer, { candidate: event.candidate }) }
+    pc.onconnectionstatechange = refresh
+    await pc.setLocalDescription(await pc.createOffer())
+    send(viewer, { sdp: pc.localDescription })
+  }
+
+  async function onSignal(from, data) {
+    const peer = peers.get(from)
+    if (!peer) return
+    if (data.sdp) {
+      await peer.pc.setRemoteDescription(data.sdp)
+      for (const candidate of peer.waiting.splice(0)) await peer.pc.addIceCandidate(candidate).catch(() => {})
+    } else if (data.candidate) {
+      if (peer.pc.remoteDescription) await peer.pc.addIceCandidate(data.candidate).catch(() => {})
+      else peer.waiting.push(data.candidate)
+    }
+  }
+
+  function connect() {
+    let queue = Promise.resolve()
+    events = new EventSource(`/events?t=${token}`)
+    events.onopen = refresh
+    events.onerror = () => {
+      refresh()
+      // The browser stops trying when the computer cannot be reached at all.
+      if (events.readyState === EventSource.CLOSED) setTimeout(connect, 2000)
+    }
+    events.onmessage = (event) => {
+      const message = JSON.parse(event.data)
+      queue = queue.then(async () => {
+        if (message.type === "hello") {
+          for (const viewer of [...peers.keys()]) drop(viewer)
+          id = message.id
+        } else if (message.type === "viewer-joined") await offer(message.id)
+        else if (message.type === "viewer-left") drop(message.id)
+        else if (message.type === "signal") await onSignal(message.from, message.data)
+        else if (message.type === "replaced") {
+          events.onerror = null
+          events.close()
+          for (const viewer of [...peers.keys()]) drop(viewer)
+          notice(t.replaced, t.again)
+        }
+        refresh()
+      }).catch(() => {})
+    }
+  }
+
+  // Lens lets go of a phone it has not heard from, so a sleeping one does not
+  // go on looking connected.
+  setInterval(() => { if (id !== null) fetch(`/ping?t=${token}&id=${id}`, { method: "POST" }).catch(() => {}) }, 5000)
+
+  // A phone that dims its screen stops sending video.
+  async function stayAwake() {
+    try { await navigator.wakeLock?.request("screen") } catch { /* not allowed right now */ }
+  }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) stayAwake() })
+  document.addEventListener("pointerdown", stayAwake)
+
+  async function start() {
+    document.body.classList.remove("notice-on")
+    if (!navigator.mediaDevices?.getUserMedia) return notice(t.insecure, t.retry)
+    status(t.starting)
+    try {
+      stream ??= await camera()
+    } catch {
+      return notice(t.denied, t.retry)
+    }
+    $("video").srcObject = stream
+    stayAwake()
+    connect()
+  }
+
+  $("retry").onclick = start
+
+  $("flip").onclick = async () => {
+    if (!stream) return
+    const before = facing
+    facing = facing === "environment" ? "user" : "environment"
+    // Some phones cannot open a second camera while the first is in use.
+    for (const track of stream.getTracks()) track.stop()
+    try {
+      stream = await camera()
+    } catch {
+      facing = before
+      stream = await camera().catch(() => null)
+      if (!stream) return notice(t.denied, t.retry)
+    }
+    $("video").srcObject = stream
+    const [track] = stream.getVideoTracks()
+    for (const { pc } of peers.values()) {
+      for (const sender of pc.getSenders()) if (sender.track?.kind === "video" || !sender.track) await sender.replaceTrack(track).catch(() => {})
+    }
+  }
+
+  start()
+</script>
+</body>
+</html>
